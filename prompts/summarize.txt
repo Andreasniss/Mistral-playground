@@ -1,0 +1,3 @@
+Summarize the following text in one or two sentences:
+
+{{TEXT}}
