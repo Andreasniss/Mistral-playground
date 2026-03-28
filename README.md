@@ -10,15 +10,18 @@ A structured Python playground for testing the Mistral API, following LLM projec
 Mistral-playground/
 ├── .env                  # 🔒 secrets — NEVER commit (create from .env.example)
 ├── .env.example          # template with placeholder values — safe to commit
-├── .gitignore            # excludes .env and other generated files
-├── config.py             # loads and validates env vars (model, params, key)
-├── llm_client.py         # single Mistral API wrapper with a chat() function
+├── .gitignore            # excludes .env, logs/, and other generated files
+├── config.py             # loads and validates env vars (model, params, key, log level)
+├── logger.py             # configures logging to stdout and logs/app.log
+├── llm_client.py         # single Mistral API wrapper with tracing and logging
 ├── prompts_loader.py     # utility to load prompt files from prompts/
 ├── main.py               # demo application using the above modules
 ├── requirements.txt      # project dependencies
 ├── prompts/
 │   ├── system_prompt.txt # default system prompt
 │   └── summarize.txt     # summarization prompt with {{TEXT}} placeholder
+├── logs/                 # auto-created at runtime — gitignored
+│   └── app.log
 └── tests/
     └── test_main.py      # unit tests using mocks (no real API calls)
 ```
@@ -75,12 +78,47 @@ The `summarize.txt` prompt uses a `{{TEXT}}` placeholder that `main.py` fills in
 
 This separation means the modules (`llm_client`, `prompts_loader`, `config`) are independently reusable.
 
-### 6. Tests — `tests/test_main.py`
+### 6. Logging — `logger.py`
 
-Tests use `unittest.mock` to patch `get_client()`, so they run without an API key and without making real network calls. This makes the test suite fast and safe to run in CI. Four tests cover:
+A single `get_logger(name)` function configures and returns a named logger. Every logger gets two handlers:
+
+- **Console** (`stdout`): respects `LOG_LEVEL` from `.env` — set to `WARNING` to silence it in production
+- **File** (`logs/app.log`): always set to `DEBUG` so the full detail is captured on disk regardless of the console level
+
+The `logs/` directory is created automatically at runtime and is excluded from git.
+
+```
+LOG_LEVEL=INFO   # change to DEBUG, WARNING, ERROR as needed
+```
+
+### 7. Tracing — `llm_client.py`
+
+Each call to `chat()` gets a short random **trace ID** (e.g. `[a3f9c21b]`) that appears on every log line for that call, making it easy to correlate request and response entries in the log file.
+
+What is logged per call:
+
+| Event | Level | Fields |
+|---|---|---|
+| Request | INFO | trace ID, model, max_tokens, temperature, user message (truncated) |
+| Response | INFO | trace ID, latency (s), prompt_tokens, completion_tokens, total_tokens |
+| Response content | DEBUG | trace ID, content (truncated) |
+| API error | ERROR | trace ID, latency, exception message |
+
+Example log output:
+
+```
+2024-01-15 10:23:41 [INFO] llm_client — [a3f9c21b] Request — model=mistral-large-latest max_tokens=1024 temperature=0.7 user_message='Explain what Mistral AI is...'
+2024-01-15 10:23:43 [INFO] llm_client — [a3f9c21b] Response — latency=1.84s prompt_tokens=42 completion_tokens=87 total_tokens=129
+```
+
+### 8. Tests — `tests/test_main.py`
+
+Tests use `unittest.mock` to patch `get_client()`, so they run without an API key and without making real network calls. This makes the test suite fast and safe to run in CI. Six tests cover:
 
 - `chat()` sends the correct user message
 - `chat()` includes a system message when provided
+- `chat()` logs request and response fields (including latency and token counts)
+- `chat()` logs an error and re-raises on API failure
 - `load_prompt()` returns file contents correctly
 - `load_prompt()` raises `FileNotFoundError` for missing files
 
@@ -124,3 +162,5 @@ pytest tests/
 - **Change the model**: update `MISTRAL_MODEL` in `.env` — no code changes needed
 - **Add a new use case**: write a function in `main.py` that calls `chat()` with your prompt
 - **Stream responses**: the Mistral SDK supports `client.chat.stream()` — swap `chat.complete` in `llm_client.py`
+- **Quiet the console**: set `LOG_LEVEL=WARNING` in `.env` — errors still appear but request/response logs are suppressed
+- **Read the full log**: `cat logs/app.log` — always written at `DEBUG` level regardless of `LOG_LEVEL`
