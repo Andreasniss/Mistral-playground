@@ -101,6 +101,24 @@ def test_non_retryable_error_raises_immediately():
         assert mock_client.chat.complete.call_count == 1
 
 
+def test_retry_respects_retry_after_header():
+    # The Mistral API sets a Retry-After header on 429 responses.
+    # Our code should use that value instead of calculating its own delay.
+    with patch("llm_client.get_client") as mock_get_client, \
+         patch("llm_client.time.sleep") as mock_sleep:
+        exc = _retryable_exc(429)
+        exc.headers = {"Retry-After": "7"}
+        mock_client = MagicMock()
+        mock_client.chat.complete.side_effect = [exc, _make_response("OK")]
+        mock_get_client.return_value = mock_client
+
+        from llm_client import chat
+        chat("Hello")
+
+        # sleep must have been called with exactly the Retry-After value
+        mock_sleep.assert_called_once_with(7.0)
+
+
 def test_retry_uses_exponential_backoff():
     with patch("llm_client.get_client") as mock_get_client, \
          patch("llm_client.time.sleep") as mock_sleep, \

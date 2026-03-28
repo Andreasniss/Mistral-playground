@@ -113,12 +113,13 @@ Example log output:
 
 ### 8. Retry with exponential backoff — `llm_client.py`
 
-The Mistral docs recommend retrying `429` (rate limit) and `5xx` (server) errors with exponential backoff and jitter. A `_call_with_retry()` helper wraps every API call:
+The [Mistral API docs](https://docs.mistral.ai/api/) recommend retrying `429` (rate limit) and `5xx` (server) errors with exponential backoff and jitter. A `_call_with_retry()` helper wraps every API call:
 
 - Retries on status codes `429, 500, 502, 503, 504`
-- Does **not** retry `4xx` client errors (bad request, auth failure, etc.)
-- Delay formula: `base_delay × 2^attempt + random jitter (0–0.5s)`, capped at `max_delay`
-- Logs a `WARNING` on each retry attempt, `ERROR` if all attempts are exhausted
+- Does **not** retry `4xx` client errors (bad request, auth failure, etc.) — those won't resolve by retrying
+- If the server returns a `Retry-After` header on a 429, that value is used as the delay instead of the calculated one
+- Delay formula (when no `Retry-After` header): `base_delay × 2^attempt + random jitter (0–0.5s)`, capped at `max_delay`
+- Logs a `WARNING` on each retry attempt (noting if `Retry-After` was honoured), `ERROR` if all attempts are exhausted
 
 ```
 RETRY_MAX_ATTEMPTS=3    # total attempts (1 original + 2 retries)
@@ -126,22 +127,23 @@ RETRY_BASE_DELAY=0.5    # seconds — first retry waits ~0.5s
 RETRY_MAX_DELAY=60.0    # seconds — cap for any single delay
 ```
 
-Example log when a 429 is hit and recovered:
+Example log when a 429 with a `Retry-After` header is hit and recovered:
 
 ```
-[a3f9c21b] Retryable error (HTTP 429), attempt 1/3 — retrying in 0.6s
-[a3f9c21b] Response — latency=2.41s prompt_tokens=42 completion_tokens=87 total_tokens=129
+[a3f9c21b] Retryable error (HTTP 429), attempt 1/3 — retrying in 5.0s (Retry-After header)
+[a3f9c21b] Response — latency=6.84s prompt_tokens=42 completion_tokens=87 total_tokens=129
 ```
 
 ### 9. Tests — `tests/test_main.py`
 
-Tests use `unittest.mock` to patch `get_client()`, so they run without an API key and without making real network calls. This makes the test suite fast and safe to run in CI. Ten tests cover:
+Tests use `unittest.mock` to patch `get_client()`, so they run without an API key and without making real network calls. This makes the test suite fast and safe to run in CI. Eleven tests cover:
 
 - `chat()` sends the correct user message
 - `chat()` includes a system message when provided
 - Retry succeeds after a transient 429
 - Retry exhaustion raises the last exception after `RETRY_MAX_ATTEMPTS` attempts
 - Non-retryable errors (e.g. 400) raise immediately with no sleep
+- `Retry-After` header value is used as the sleep duration when present
 - Retry delays are exponential and never exceed `RETRY_MAX_DELAY`
 - `chat()` logs a `WARNING` on retry attempts
 - `chat()` logs request and response fields (including latency and token counts)
@@ -186,9 +188,51 @@ pytest tests/
 ## Extending the Playground
 
 - **Add a new prompt**: create a `.txt` file in `prompts/` and load it with `load_prompt("your_file.txt")`
-- **Change the model**: update `MISTRAL_MODEL` in `.env` — no code changes needed
+- **Change the model**: update `MISTRAL_MODEL` in `.env` — no code changes needed. See the [full model list](https://docs.mistral.ai/getting-started/models/models_overview/)
 - **Add a new use case**: write a function in `main.py` that calls `chat()` with your prompt
-- **Stream responses**: the Mistral SDK supports `client.chat.stream()` — swap `chat.complete` in `llm_client.py`
 - **Quiet the console**: set `LOG_LEVEL=WARNING` in `.env` — errors still appear but request/response logs are suppressed
 - **Read the full log**: `cat logs/app.log` — always written at `DEBUG` level regardless of `LOG_LEVEL`
 - **Tune retry behaviour**: adjust `RETRY_MAX_ATTEMPTS`, `RETRY_BASE_DELAY`, `RETRY_MAX_DELAY` in `.env`
+
+---
+
+## Next Steps to Explore
+
+These are not implemented in the playground yet but are worth knowing about and experimenting with.
+
+### Streaming responses
+Instead of waiting for the full reply, stream tokens as they are generated. Useful for chat UIs and long outputs.
+→ [Streaming guide](https://docs.mistral.ai/capabilities/completion/) — swap `chat.complete` for `chat.stream` in `llm_client.py`
+
+### Reproducible outputs with `random_seed`
+Pass `random_seed=42` (integer) to `client.chat.complete()` to get deterministic outputs for the same input. Useful for testing and benchmarking.
+→ [API reference](https://docs.mistral.ai/api/)
+
+### Content moderation with `safe_prompt`
+Pass `safe_prompt=True` to enable Mistral's built-in guardrailing against sensitive content. Can be combined with your own system prompt.
+→ [Guardrailing guide](https://docs.mistral.ai/capabilities/guardrailing/)
+
+### Structured / JSON output
+Use `response_format` with a JSON schema or Pydantic model to get typed, structured responses instead of free-form text.
+→ [Structured output guide](https://docs.mistral.ai/capabilities/structured-output/custom_structured_output/)
+
+### Function / tool calling
+Let the model call your Python functions. Pass a `tools` list to `chat.complete()` and handle `finish_reason == "tool_calls"` in the response.
+→ [Function calling guide](https://docs.mistral.ai/capabilities/function_calling/)
+
+### Observability integrations
+The `usage` object we already log (token counts) is the baseline signal. For richer dashboards, traces, and cost tracking, the official integrations are:
+
+| Tool | What it gives you | Official guide |
+|---|---|---|
+| **Langfuse** | Per-request traces, latency histograms, cost tracking, prompt versioning | [Langfuse + Mistral cookbook](https://docs.mistral.ai/cookbooks/third_party-langfuse-cookbook_langfuse_mistral_sdk_integration) |
+| **MLflow** | Auto-logging with one line (`mlflow.mistral.autolog()`), experiment tracking, model registry | [MLflow tracing guide](https://docs.mistral.ai/cookbooks/third_party-mlflow-mistral-mlflow-tracing) |
+| **Langtrace** | Open-source OpenTelemetry-based tracing for LLM calls | [Langtrace docs](https://docs.langtrace.ai) |
+
+### Async calls
+For concurrent requests or use inside an async framework (FastAPI, etc.), use the async variant:
+```python
+async with Mistral(api_key=...) as client:
+    response = await client.chat.complete_async(model=..., messages=[...])
+```
+→ [SDK clients reference](https://docs.mistral.ai/getting-started/clients/)
