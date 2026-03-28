@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, call
 import pytest
 
 
@@ -10,6 +10,14 @@ def _make_response(content="Test response", prompt_tokens=10, completion_tokens=
     mock_response.usage.total_tokens = prompt_tokens + completion_tokens
     return mock_response
 
+
+def _retryable_exc(status_code=429):
+    exc = Exception(f"HTTP {status_code}")
+    exc.status_code = status_code
+    return exc
+
+
+# --- chat() core behaviour ---
 
 def test_chat_sends_user_message():
     with patch("llm_client.get_client") as mock_get_client:
@@ -41,6 +49,83 @@ def test_chat_includes_system_message():
         assert messages[0]["content"] == "You are helpful."
 
 
+# --- retry logic ---
+
+def test_retry_succeeds_after_transient_429():
+    with patch("llm_client.get_client") as mock_get_client, \
+         patch("llm_client.time.sleep"):
+        mock_client = MagicMock()
+        mock_client.chat.complete.side_effect = [
+            _retryable_exc(429),
+            _make_response("OK"),
+        ]
+        mock_get_client.return_value = mock_client
+
+        from llm_client import chat
+        result = chat("Hello")
+
+        assert result == "OK"
+        assert mock_client.chat.complete.call_count == 2
+
+
+def test_retry_exhausted_raises_last_exception():
+    with patch("llm_client.get_client") as mock_get_client, \
+         patch("llm_client.time.sleep"):
+        mock_client = MagicMock()
+        mock_client.chat.complete.side_effect = _retryable_exc(503)
+        mock_get_client.return_value = mock_client
+
+        import config
+        from llm_client import chat
+        with pytest.raises(Exception, match="503"):
+            chat("Hello")
+
+        assert mock_client.chat.complete.call_count == config.RETRY_MAX_ATTEMPTS
+
+
+def test_non_retryable_error_raises_immediately():
+    with patch("llm_client.get_client") as mock_get_client, \
+         patch("llm_client.time.sleep") as mock_sleep:
+        mock_client = MagicMock()
+        exc = Exception("Bad request")
+        exc.status_code = 400
+        mock_client.chat.complete.side_effect = exc
+        mock_get_client.return_value = mock_client
+
+        from llm_client import chat
+        with pytest.raises(Exception, match="Bad request"):
+            chat("Hello")
+
+        # no sleep — should have failed immediately without retrying
+        mock_sleep.assert_not_called()
+        assert mock_client.chat.complete.call_count == 1
+
+
+def test_retry_uses_exponential_backoff():
+    with patch("llm_client.get_client") as mock_get_client, \
+         patch("llm_client.time.sleep") as mock_sleep, \
+         patch("llm_client.random.uniform", return_value=0.0):
+        mock_client = MagicMock()
+        mock_client.chat.complete.side_effect = [
+            _retryable_exc(429),
+            _retryable_exc(429),
+            _make_response("OK"),
+        ]
+        mock_get_client.return_value = mock_client
+
+        import config
+        from llm_client import chat
+        chat("Hello")
+
+        delays = [c.args[0] for c in mock_sleep.call_args_list]
+        # each delay should be larger than the previous (exponential)
+        assert delays[1] > delays[0]
+        # delays must not exceed max
+        assert all(d <= config.RETRY_MAX_DELAY for d in delays)
+
+
+# --- logging ---
+
 def test_chat_logs_request_and_response(caplog):
     import logging
     with patch("llm_client.get_client") as mock_get_client:
@@ -59,6 +144,24 @@ def test_chat_logs_request_and_response(caplog):
         assert any("total_tokens" in m for m in messages)
 
 
+def test_chat_logs_warning_on_retry(caplog):
+    import logging
+    with patch("llm_client.get_client") as mock_get_client, \
+         patch("llm_client.time.sleep"):
+        mock_client = MagicMock()
+        mock_client.chat.complete.side_effect = [
+            _retryable_exc(429),
+            _make_response("OK"),
+        ]
+        mock_get_client.return_value = mock_client
+
+        from llm_client import chat
+        with caplog.at_level(logging.WARNING, logger="llm_client"):
+            chat("Hello")
+
+        assert any("Retryable" in r.message for r in caplog.records)
+
+
 def test_chat_logs_error_on_failure(caplog):
     import logging
     with patch("llm_client.get_client") as mock_get_client:
@@ -73,6 +176,8 @@ def test_chat_logs_error_on_failure(caplog):
 
         assert any("failed" in r.message for r in caplog.records)
 
+
+# --- prompts ---
 
 def test_load_prompt_returns_content(tmp_path, monkeypatch):
     import prompts_loader

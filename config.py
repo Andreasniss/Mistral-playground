@@ -12,5 +12,9 @@ REQUEST_TIMEOUT = 30  # seconds
 
 LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
 
+RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))
+RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "0.5"))   # seconds
+RETRY_MAX_DELAY = float(os.getenv("RETRY_MAX_DELAY", "60.0"))    # seconds
+
 if not MISTRAL_API_KEY:
     raise EnvironmentError("MISTRAL_API_KEY is not set. Copy .env.example to .env and fill in your key.")

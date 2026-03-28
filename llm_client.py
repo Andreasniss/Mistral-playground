@@ -1,5 +1,6 @@
 import time
 import uuid
+import random
 from mistralai import Mistral
 import config
 from logger import get_logger
@@ -7,6 +8,7 @@ from logger import get_logger
 logger = get_logger("llm_client")
 
 _client = None
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 def get_client() -> Mistral:
@@ -14,6 +16,41 @@ def get_client() -> Mistral:
     if _client is None:
         _client = Mistral(api_key=config.MISTRAL_API_KEY)
     return _client
+
+
+def _is_retryable(exc: Exception) -> bool:
+    status = getattr(exc, "status_code", None)
+    if status is not None:
+        return status in _RETRYABLE_STATUS_CODES
+    # fallback for SDKs that embed the status code in the message
+    return any(str(code) in str(exc) for code in _RETRYABLE_STATUS_CODES)
+
+
+def _call_with_retry(fn, trace_id: str):
+    last_exc = None
+    for attempt in range(config.RETRY_MAX_ATTEMPTS):
+        try:
+            return fn()
+        except Exception as exc:
+            if not _is_retryable(exc):
+                raise
+            last_exc = exc
+            if attempt == config.RETRY_MAX_ATTEMPTS - 1:
+                break
+            delay = min(
+                config.RETRY_BASE_DELAY * (2 ** attempt) + random.uniform(0, 0.5),
+                config.RETRY_MAX_DELAY,
+            )
+            logger.warning(
+                "[%s] Retryable error (%s), attempt %d/%d — retrying in %.1fs",
+                trace_id,
+                exc,
+                attempt + 1,
+                config.RETRY_MAX_ATTEMPTS,
+                delay,
+            )
+            time.sleep(delay)
+    raise last_exc
 
 
 def chat(
@@ -42,11 +79,14 @@ def chat(
 
     start = time.perf_counter()
     try:
-        response = get_client().chat.complete(
-            model=resolved_model,
-            messages=messages,
-            max_tokens=max_tokens or config.MISTRAL_MAX_TOKENS,
-            temperature=temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
+        response = _call_with_retry(
+            lambda: get_client().chat.complete(
+                model=resolved_model,
+                messages=messages,
+                max_tokens=max_tokens or config.MISTRAL_MAX_TOKENS,
+                temperature=temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
+            ),
+            trace_id,
         )
     except Exception as exc:
         logger.error("[%s] Request failed after %.2fs — %s", trace_id, time.perf_counter() - start, exc)

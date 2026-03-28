@@ -111,12 +111,39 @@ Example log output:
 2024-01-15 10:23:43 [INFO] llm_client — [a3f9c21b] Response — latency=1.84s prompt_tokens=42 completion_tokens=87 total_tokens=129
 ```
 
-### 8. Tests — `tests/test_main.py`
+### 8. Retry with exponential backoff — `llm_client.py`
 
-Tests use `unittest.mock` to patch `get_client()`, so they run without an API key and without making real network calls. This makes the test suite fast and safe to run in CI. Six tests cover:
+The Mistral docs recommend retrying `429` (rate limit) and `5xx` (server) errors with exponential backoff and jitter. A `_call_with_retry()` helper wraps every API call:
+
+- Retries on status codes `429, 500, 502, 503, 504`
+- Does **not** retry `4xx` client errors (bad request, auth failure, etc.)
+- Delay formula: `base_delay × 2^attempt + random jitter (0–0.5s)`, capped at `max_delay`
+- Logs a `WARNING` on each retry attempt, `ERROR` if all attempts are exhausted
+
+```
+RETRY_MAX_ATTEMPTS=3    # total attempts (1 original + 2 retries)
+RETRY_BASE_DELAY=0.5    # seconds — first retry waits ~0.5s
+RETRY_MAX_DELAY=60.0    # seconds — cap for any single delay
+```
+
+Example log when a 429 is hit and recovered:
+
+```
+[a3f9c21b] Retryable error (HTTP 429), attempt 1/3 — retrying in 0.6s
+[a3f9c21b] Response — latency=2.41s prompt_tokens=42 completion_tokens=87 total_tokens=129
+```
+
+### 9. Tests — `tests/test_main.py`
+
+Tests use `unittest.mock` to patch `get_client()`, so they run without an API key and without making real network calls. This makes the test suite fast and safe to run in CI. Ten tests cover:
 
 - `chat()` sends the correct user message
 - `chat()` includes a system message when provided
+- Retry succeeds after a transient 429
+- Retry exhaustion raises the last exception after `RETRY_MAX_ATTEMPTS` attempts
+- Non-retryable errors (e.g. 400) raise immediately with no sleep
+- Retry delays are exponential and never exceed `RETRY_MAX_DELAY`
+- `chat()` logs a `WARNING` on retry attempts
 - `chat()` logs request and response fields (including latency and token counts)
 - `chat()` logs an error and re-raises on API failure
 - `load_prompt()` returns file contents correctly
@@ -164,3 +191,4 @@ pytest tests/
 - **Stream responses**: the Mistral SDK supports `client.chat.stream()` — swap `chat.complete` in `llm_client.py`
 - **Quiet the console**: set `LOG_LEVEL=WARNING` in `.env` — errors still appear but request/response logs are suppressed
 - **Read the full log**: `cat logs/app.log` — always written at `DEBUG` level regardless of `LOG_LEVEL`
+- **Tune retry behaviour**: adjust `RETRY_MAX_ATTEMPTS`, `RETRY_BASE_DELAY`, `RETRY_MAX_DELAY` in `.env`
