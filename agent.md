@@ -80,7 +80,7 @@ cp .env.example .env        # then fill in MISTRAL_API_KEY
 | `MISTRAL_API_KEY` | — | **Required.** Get from console.mistral.ai |
 | `MISTRAL_MODEL` | `mistral-large-latest` | Model alias or pinned ID |
 | `MISTRAL_MAX_TOKENS` | `1024` | Default token limit per call |
-| `MISTRAL_TEMPERATURE` | `0.7` | Sampling temperature (0.0–0.7 per Mistral docs) |
+| `MISTRAL_TEMPERATURE` | `0.0` | Sampling temperature (0.0 = deterministic, recommended for testing) |
 | `LOG_LEVEL` | `INFO` | Console log verbosity (`DEBUG`/`INFO`/`WARNING`/`ERROR`) |
 | `RETRY_MAX_ATTEMPTS` | `3` | Total attempts including the first |
 | `RETRY_BASE_DELAY` | `0.5` | Seconds before first retry |
