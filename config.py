@@ -16,7 +16,7 @@ MISTRAL_MAX_TOKENS = int(os.getenv("MISTRAL_MAX_TOKENS", "1024"))
 # Mistral docs recommend temperature in the range 0.0–0.7.
 # Do not set both temperature and top_p at the same time.
 # https://docs.mistral.ai/capabilities/completion/
-MISTRAL_TEMPERATURE = float(os.getenv("MISTRAL_TEMPERATURE", "0.7"))
+MISTRAL_TEMPERATURE = float(os.getenv("MISTRAL_TEMPERATURE", "0.0"))
 REQUEST_TIMEOUT = 30  # seconds
 
 # --- Logging ---

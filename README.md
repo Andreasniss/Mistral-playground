@@ -38,7 +38,7 @@ The first priority is keeping the API key out of git. `.env` holds the real key 
 MISTRAL_API_KEY=your_mistral_api_key_here
 MISTRAL_MODEL=mistral-large-latest
 MISTRAL_MAX_TOKENS=1024
-MISTRAL_TEMPERATURE=0.7
+MISTRAL_TEMPERATURE=0.0
 ```
 
 ### 2. Centralised config — `config.py`
@@ -107,7 +107,7 @@ What is logged per call:
 Example log output:
 
 ```
-2024-01-15 10:23:41 [INFO] llm_client — [a3f9c21b] Request — model=mistral-large-latest max_tokens=1024 temperature=0.7 user_message='Explain what Mistral AI is...'
+2024-01-15 10:23:41 [INFO] llm_client — [a3f9c21b] Request — model=mistral-large-latest max_tokens=1024 temperature=0.0 user_message='Explain what Mistral AI is...'
 2024-01-15 10:23:43 [INFO] llm_client — [a3f9c21b] Response — latency=1.84s prompt_tokens=42 completion_tokens=87 total_tokens=129
 ```
 
