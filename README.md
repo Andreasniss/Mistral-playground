@@ -16,6 +16,7 @@ Mistral-playground/
 ├── llm_client.py         # single Mistral API wrapper with tracing and logging
 ├── prompts_loader.py     # utility to load prompt files from prompts/
 ├── main.py               # demo application using the above modules
+├── api.py                # FastAPI server — exposes /health, /chat, /summarize
 ├── requirements.txt      # project dependencies
 ├── prompts/
 │   ├── system_prompt.txt # default system prompt
@@ -182,6 +183,85 @@ python main.py
 ```bash
 pytest tests/
 ```
+
+---
+
+## FastAPI Server
+
+The project includes a local HTTP API built with FastAPI (`api.py`). It exposes the same `chat()` and `summarize()` functionality over HTTP, making it easy to call from any tool — curl, Postman, a frontend, another service — without writing Python.
+
+### Why FastAPI was added
+
+- **Interactive docs**: FastAPI auto-generates a `/docs` UI (Swagger) at startup. You can test every endpoint in the browser with no extra tooling.
+- **Typed contracts**: Pydantic models validate every request and response, so malformed input is rejected with a clear `422` before it reaches the Mistral API.
+- **Async-ready**: FastAPI is built on async Python, which pairs well with `client.chat.complete_async()` for concurrent requests if you extend this later.
+- **Zero rewrite**: `llm_client.py`, `prompts_loader.py`, `config.py`, and `logger.py` are all unchanged — `api.py` simply wraps them.
+
+### Security design
+
+- **Localhost-only**: the server binds to `127.0.0.1`, so it is never reachable from the network — only from your own machine.
+- **`X-API-Key` header**: every protected endpoint requires this header. The value must match `API_KEY` in your `.env`. If missing or wrong, the server returns `401`. This prevents other local processes from hitting the server without the key.
+- **`/health` is unauthenticated**: safe for liveness checks without exposing a credential.
+
+### Setup
+
+Add `API_KEY` to your `.env`:
+
+```bash
+# Generate a strong random key
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+Paste the output as the value:
+
+```
+API_KEY=your_generated_key_here
+```
+
+### Start the server
+
+```bash
+uvicorn api:app --host 127.0.0.1 --port 8000
+```
+
+The server is now running at `http://127.0.0.1:8000`.
+
+### Demo the endpoints
+
+**Open the interactive docs** in your browser:
+
+```
+http://127.0.0.1:8000/docs
+```
+
+Every endpoint is listed with its schema. Click **Try it out** on `/chat` or `/summarize`, add your `X-API-Key` via the **Authorize** button (top right), and send a real request.
+
+**Or use curl:**
+
+```bash
+# Health check — no auth needed
+curl http://127.0.0.1:8000/health
+
+# Chat
+curl -X POST http://127.0.0.1:8000/chat \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_generated_key_here" \
+  -d '{"message": "Explain transformers in one sentence"}'
+
+# Summarise
+curl -X POST http://127.0.0.1:8000/summarize \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your_generated_key_here" \
+  -d '{"text": "Large language models are neural networks trained on vast amounts of text..."}'
+```
+
+### Endpoints
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | None | Liveness check — returns status and model name |
+| `POST` | `/chat` | `X-API-Key` | Send a message; optional `system` field to set behaviour |
+| `POST` | `/summarize` | `X-API-Key` | Summarise text using the `prompts/summarize.txt` template |
 
 ---
 

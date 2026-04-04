@@ -31,5 +31,11 @@ RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))   # total attempt
 RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "0.5"))   # seconds before first retry
 RETRY_MAX_DELAY = float(os.getenv("RETRY_MAX_DELAY", "60.0"))    # cap on any single delay
 
+# --- API server ---
+# Secret used to authenticate requests to the FastAPI server (X-API-Key header).
+# Only required when running api.py — not needed for plain python main.py usage.
+# Generate a strong value with: python -c "import secrets; print(secrets.token_hex(32))"
+API_KEY = os.getenv("API_KEY")
+
 if not MISTRAL_API_KEY:
     raise EnvironmentError("MISTRAL_API_KEY is not set. Copy .env.example to .env and fill in your key.")
