@@ -3,16 +3,16 @@ import uuid
 import random
 from typing import Optional
 from mistralai import Mistral
+from openai import OpenAI
 import config
 from logger import get_logger
 
 logger = get_logger("llm_client")
 
-# Singleton Mistral client — created once and reused across all calls.
-# Creating a Mistral() object initialises an HTTP connection pool under the hood;
-# rebuilding it on every request would be wasteful and slower. By storing the
-# client in a module-level variable and returning the same instance every time,
-# the connection pool stays warm for the lifetime of the process.
+# Singleton client — created once and reused across all calls.
+# When LLM_BACKEND=api  → Mistral SDK pointing at the cloud API.
+# When LLM_BACKEND=local → OpenAI SDK pointing at the local Ollama server
+#                          (Ollama exposes an OpenAI-compatible endpoint).
 _client = None
 
 # Status codes worth retrying, per Mistral API docs:
@@ -24,19 +24,20 @@ _client = None
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
-def get_client() -> Mistral:
-    """Return the shared Mistral SDK client, creating it on first call.
+def get_client():
+    """Return the shared client, creating it on first call.
 
-    This function is defined here (not by the SDK) to control when and how the
-    client is created. The `global _client` line tells Python that any assignment
-    inside this function should update the module-level `_client` variable above,
-    not create a throwaway local variable that would be lost when the function
-    returns. Without it, `_client` would stay None forever and a new Mistral
-    object would be created on every call.
+    Returns a Mistral client when LLM_BACKEND=api, or an OpenAI client
+    (pointed at the local Ollama server) when LLM_BACKEND=local.
     """
     global _client
     if _client is None:
-        _client = Mistral(api_key=config.MISTRAL_API_KEY)
+        if config.LLM_BACKEND == "local":
+            _client = OpenAI(base_url=config.OLLAMA_BASE_URL, api_key="ollama")
+            logger.info("Using local Ollama backend at %s", config.OLLAMA_BASE_URL)
+        else:
+            _client = Mistral(api_key=config.MISTRAL_API_KEY)
+            logger.info("Using Mistral cloud API backend")
     return _client
 
 
@@ -167,15 +168,27 @@ def chat(
 
     start = time.perf_counter()
     try:
-        response = _call_with_retry(
-            lambda: get_client().chat.complete(
-                model=resolved_model,
-                messages=messages,
-                max_tokens=max_tokens or config.MISTRAL_MAX_TOKENS,
-                temperature=temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
-            ),
-            trace_id,
-        )
+        if config.LLM_BACKEND == "local":
+            # Ollama exposes an OpenAI-compatible endpoint: chat.completions.create()
+            response = _call_with_retry(
+                lambda: get_client().chat.completions.create(
+                    model=resolved_model,
+                    messages=messages,
+                    max_tokens=max_tokens or config.MISTRAL_MAX_TOKENS,
+                    temperature=temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
+                ),
+                trace_id,
+            )
+        else:
+            response = _call_with_retry(
+                lambda: get_client().chat.complete(
+                    model=resolved_model,
+                    messages=messages,
+                    max_tokens=max_tokens or config.MISTRAL_MAX_TOKENS,
+                    temperature=temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
+                ),
+                trace_id,
+            )
     except Exception as exc:
         logger.error("[%s] Request failed after %.2fs — %s", trace_id, time.perf_counter() - start, exc)
         raise

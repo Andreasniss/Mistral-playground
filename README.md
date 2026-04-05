@@ -156,15 +156,34 @@ Tests use `unittest.mock` to patch `get_client()`, so they run without an API ke
 
 ## Getting Started
 
-**1. Clone and install dependencies**
+**1. Clone the repo and create a virtual environment**
 
 ```bash
 git clone https://github.com/Andreasniss/Mistral-playground
 cd Mistral-playground
-pip3 install -r requirements.txt
+python3 -m venv .venv
 ```
 
-**2. Create your `.env` file**
+Activate it (required every time you open a new terminal):
+
+```bash
+# macOS / Linux (bash/zsh)
+source .venv/bin/activate
+
+# macOS / Linux (fish)
+source .venv/bin/activate.fish
+
+# Windows
+.venv\Scripts\activate
+```
+
+**2. Install dependencies**
+
+```bash
+pip install -r requirements.txt
+```
+
+**3. Create your `.env` file**
 
 ```bash
 cp .env.example .env
@@ -172,7 +191,48 @@ cp .env.example .env
 
 Then open `.env` and replace `your_mistral_api_key_here` with your actual key from [console.mistral.ai](https://console.mistral.ai).
 
-**3. Explore the interactive notebook**
+---
+
+## Running Locally with Ollama (no API key needed)
+
+Instead of the Mistral cloud API you can run a model on your own machine using [Ollama](https://ollama.com). No API key is required.
+
+**1. Install Ollama and pull a model**
+
+```bash
+brew install ollama
+ollama serve          # start the local server (keep this running)
+ollama pull mistral   # download the model (~4 GB)
+```
+
+Pick a model based on how much RAM you have:
+
+| Model | RAM needed | Ollama name |
+|---|---|---|
+| Mistral 7B | 8 GB+ | `mistral` |
+| Mistral Nemo 12B | 16 GB+ | `mistral-nemo` |
+| Mistral Small 22B | 32 GB+ | `mistral-small` |
+
+**2. Switch the backend in `.env`**
+
+```ini
+LLM_BACKEND=local
+MISTRAL_MODEL=mistral
+```
+
+`MISTRAL_API_KEY` is not required when `LLM_BACKEND=local`. `OLLAMA_BASE_URL` defaults to `http://localhost:11434/v1` — only set it if you run Ollama on a non-default port.
+
+**3. Run as normal**
+
+```bash
+python3 demo_chat.py
+```
+
+To switch back to the cloud API, set `LLM_BACKEND=api` and ensure `MISTRAL_API_KEY` is set.
+
+---
+
+**4. Explore the interactive notebook**
 
 The best way to understand the project is `demo.ipynb` — it walks through every module with explanations and live output side by side:
 
@@ -182,7 +242,7 @@ jupyter notebook demo.ipynb
 
 19 sections covering: config, logging, prompt templates, the API client, basic chat, summarization, parameter overrides, retry logic, an interactive playground, streaming, multi-turn conversation, model comparison, reproducible outputs, content moderation, structured JSON output, function calling, async calls, token/cost tracking, and RAG.
 
-**4. Or run the scripts directly**
+**5. Or run the scripts directly**
 
 ```bash
 python3 main.py              # basic chat + summarize
@@ -191,7 +251,7 @@ python3 demo_chat.py         # interactive multi-turn chat loop
 python3 demo_compare.py      # same prompt through small vs large model
 ```
 
-**5. Run the tests** (no API key needed)
+**6. Run the tests** (no API key needed)
 
 ```bash
 python3 -m pytest tests/
