@@ -19,9 +19,14 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-large-latest" if LLM_BACKEND == "api" else "mistral")
 MISTRAL_MAX_TOKENS = int(os.getenv("MISTRAL_MAX_TOKENS", "1024"))
 # Mistral docs recommend temperature in the range 0.0–0.7.
-# Do not set both temperature and top_p at the same time.
+# Do not set both temperature and top_p at the same time — use one or the other.
 # https://docs.mistral.ai/capabilities/completion/
 MISTRAL_TEMPERATURE = float(os.getenv("MISTRAL_TEMPERATURE", "0.0"))
+# top_p (nucleus sampling): only used when MISTRAL_TEMPERATURE is not set (i.e. set to None).
+# Range 0.0–1.0 — e.g. 0.9 means sample from the top 90% of the probability mass.
+MISTRAL_TOP_P = os.getenv("MISTRAL_TOP_P")  # None by default — not sent unless explicitly set
+if MISTRAL_TOP_P is not None:
+    MISTRAL_TOP_P = float(MISTRAL_TOP_P)
 REQUEST_TIMEOUT = 30  # seconds
 
 # --- Local Ollama ---

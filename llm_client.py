@@ -128,6 +128,7 @@ def chat(
     model: Optional[str] = None,
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
+    top_p: Optional[float] = None,
 ) -> str:
     """Send a chat message to Mistral and return the assistant reply as a string.
 
@@ -137,6 +138,8 @@ def chat(
         model:          Override the model from config (e.g. "mistral-small-latest").
         max_tokens:     Override the token limit from config.
         temperature:    Override the sampling temperature from config (0.0–0.7).
+        top_p:          Override nucleus sampling from config (0.0–1.0). Do not use
+                        together with temperature.
 
     Returns:
         The assistant's reply as a plain string.
@@ -157,12 +160,15 @@ def chat(
         messages.append({"role": "system", "content": system_message})
     messages.append({"role": "user", "content": user_message})
 
+    resolved_top_p = top_p if top_p is not None else config.MISTRAL_TOP_P
+
     logger.info(
-        "[%s] Request — model=%s max_tokens=%s temperature=%s user_message=%.80r",
+        "[%s] Request — model=%s max_tokens=%s temperature=%s top_p=%s user_message=%.80r",
         trace_id,
         resolved_model,
         max_tokens or config.MISTRAL_MAX_TOKENS,
         temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
+        resolved_top_p,
         user_message,
     )
 
@@ -176,6 +182,7 @@ def chat(
                     messages=messages,
                     max_tokens=max_tokens or config.MISTRAL_MAX_TOKENS,
                     temperature=temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
+                    **({"top_p": resolved_top_p} if resolved_top_p is not None else {}),
                 ),
                 trace_id,
             )
@@ -186,6 +193,7 @@ def chat(
                     messages=messages,
                     max_tokens=max_tokens or config.MISTRAL_MAX_TOKENS,
                     temperature=temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
+                    **({"top_p": resolved_top_p} if resolved_top_p is not None else {}),
                 ),
                 trace_id,
             )

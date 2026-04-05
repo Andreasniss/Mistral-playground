@@ -35,12 +35,20 @@ def run():
     results = []
     for model in MODELS:
         start = time.perf_counter()
-        response = client.chat.complete(
-            model=model,
-            messages=messages,
-            temperature=config.MISTRAL_TEMPERATURE,
-            max_tokens=config.MISTRAL_MAX_TOKENS,
-        )
+        if config.LLM_BACKEND == "local":
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=config.MISTRAL_TEMPERATURE,
+                max_tokens=config.MISTRAL_MAX_TOKENS,
+            )
+        else:
+            response = client.chat.complete(
+                model=model,
+                messages=messages,
+                temperature=config.MISTRAL_TEMPERATURE,
+                max_tokens=config.MISTRAL_MAX_TOKENS,
+            )
         elapsed = time.perf_counter() - start
         results.append((model, response, elapsed))
 

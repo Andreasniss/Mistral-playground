@@ -34,12 +34,20 @@ def run():
 
         messages = [{"role": "system", "content": system_message}] + history
 
-        response = client.chat.complete(
-            model=config.MISTRAL_MODEL,
-            messages=messages,
-            temperature=config.MISTRAL_TEMPERATURE,
-            max_tokens=config.MISTRAL_MAX_TOKENS,
-        )
+        if config.LLM_BACKEND == "local":
+            response = client.chat.completions.create(
+                model=config.MISTRAL_MODEL,
+                messages=messages,
+                temperature=config.MISTRAL_TEMPERATURE,
+                max_tokens=config.MISTRAL_MAX_TOKENS,
+            )
+        else:
+            response = client.chat.complete(
+                model=config.MISTRAL_MODEL,
+                messages=messages,
+                temperature=config.MISTRAL_TEMPERATURE,
+                max_tokens=config.MISTRAL_MAX_TOKENS,
+            )
 
         reply = response.choices[0].message.content
         history.append({"role": "assistant", "content": reply})

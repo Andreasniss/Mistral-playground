@@ -217,8 +217,10 @@ Pick a model based on how much RAM you have:
 
 ```ini
 LLM_BACKEND=local
-MISTRAL_MODEL=mistral
+MISTRAL_MODEL=mistral  # Mistral 7B running locally via Ollama
 ```
+
+> **Current setup:** running `mistral` (Mistral 7B, ~4.4 GB, 4-bit quantized) locally via Ollama.
 
 `MISTRAL_API_KEY` is not required when `LLM_BACKEND=local`. `OLLAMA_BASE_URL` defaults to `http://localhost:11434/v1` — only set it if you run Ollama on a non-default port.
 
