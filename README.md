@@ -20,7 +20,7 @@ Mistral-playground/
 ├── requirements.txt      # project dependencies
 ├── prompts/
 │   ├── system_prompt.txt # default system prompt
-│   └── summarize.txt     # summarization prompt with {{TEXT}} placeholder
+│   └── summarize.txt     # summarization prompt with embedded reference text
 ├── logs/                 # auto-created at runtime — gitignored
 │   └── app.log
 └── tests/
@@ -68,7 +68,7 @@ This means if the underlying SDK changes, only one file needs updating.
 
 Prompts are stored as plain `.txt` files rather than hardcoded strings. This keeps them easy to edit without touching Python code. `prompts_loader.py` provides a single `load_prompt(filename)` function that resolves paths relative to the project root, so it works regardless of where the script is run from.
 
-The `summarize.txt` prompt uses a `{{TEXT}}` placeholder that `main.py` fills in with `.replace()`.
+The `summarize.txt` prompt contains the instruction and a long embedded reference text — `main.py` loads and sends it directly with no substitution needed.
 
 ### 5. Application logic — `main.py`
 
@@ -137,7 +137,7 @@ Example log when a 429 with a `Retry-After` header is hit and recovered:
 
 ### 9. Tests — `tests/test_main.py`
 
-Tests use `unittest.mock` to patch `get_client()`, so they run without an API key and without making real network calls. This makes the test suite fast and safe to run in CI. Eleven tests cover:
+Tests use `unittest.mock` to patch `get_client()`, so they run without an API key and without making real network calls. This makes the test suite fast and safe to run in CI. Twelve tests cover:
 
 - `chat()` sends the correct user message
 - `chat()` includes a system message when provided
@@ -161,7 +161,7 @@ Tests use `unittest.mock` to patch `get_client()`, so they run without an API ke
 ```bash
 git clone https://github.com/Andreasniss/Mistral-playground
 cd Mistral-playground
-pip install -r requirements.txt
+pip3 install -r requirements.txt
 ```
 
 **2. Create your `.env` file**
@@ -172,16 +172,29 @@ cp .env.example .env
 
 Then open `.env` and replace `your_mistral_api_key_here` with your actual key from [console.mistral.ai](https://console.mistral.ai).
 
-**3. Run the demo**
+**3. Explore the interactive notebook**
+
+The best way to understand the project is `demo.ipynb` — it walks through every module with explanations and live output side by side:
 
 ```bash
-python main.py
+jupyter notebook demo.ipynb
 ```
 
-**4. Run the tests** (no API key needed)
+19 sections covering: config, logging, prompt templates, the API client, basic chat, summarization, parameter overrides, retry logic, an interactive playground, streaming, multi-turn conversation, model comparison, reproducible outputs, content moderation, structured JSON output, function calling, async calls, token/cost tracking, and RAG.
+
+**4. Or run the scripts directly**
 
 ```bash
-pytest tests/
+python3 main.py              # basic chat + summarize
+python3 demo_stream.py       # streaming tokens in real time
+python3 demo_chat.py         # interactive multi-turn chat loop
+python3 demo_compare.py      # same prompt through small vs large model
+```
+
+**5. Run the tests** (no API key needed)
+
+```bash
+python3 -m pytest tests/
 ```
 
 ---
@@ -209,7 +222,7 @@ Add `API_KEY` to your `.env`:
 
 ```bash
 # Generate a strong random key
-python -c "import secrets; print(secrets.token_hex(32))"
+python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 Paste the output as the value:

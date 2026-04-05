@@ -12,9 +12,8 @@ def run_basic_chat():
     print(f"Assistant: {response}\n")
 
 
-def run_summarize(text: str):
-    template = load_prompt("summarize.txt")
-    prompt = template.replace("{{TEXT}}", text)
+def run_summarize():
+    prompt = load_prompt("summarize.txt")
 
     print("=== Summarize ===")
     response = chat(prompt)
@@ -24,10 +23,4 @@ def run_summarize(text: str):
 if __name__ == "__main__":
     run_basic_chat()
 
-    sample_text = (
-        "Mistral AI is a French company founded in 2023 that develops open and proprietary "
-        "large language models. Their models are known for efficiency and strong performance "
-        "relative to their size. They offer both open-weight models like Mistral 7B and "
-        "commercial APIs with models like Mistral Large."
-    )
-    run_summarize(sample_text)
+    run_summarize()

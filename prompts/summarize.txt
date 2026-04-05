@@ -1,3 +1,52 @@
 Summarize the following text in one or two sentences:
 
-{{TEXT}}
+---
+
+The history of artificial intelligence begins in antiquity, with myths, stories, and
+rumors of artificial beings endowed with intelligence or consciousness by master
+craftsmen. The seeds of modern AI were planted by philosophers who attempted to
+describe the process of human thinking as the mechanical manipulation of symbols.
+This work culminated in the invention of the programmable digital computer in the
+1940s, a machine based on the abstract essence of mathematical reasoning. This device
+and the ideas behind it inspired a handful of scientists to begin seriously discussing
+the possibility of building an electronic brain.
+
+The field of AI research was founded at a workshop held on the campus of Dartmouth
+College during the summer of 1956. Those who attended would become the leaders of AI
+research for decades. Many of them predicted that a machine as intelligent as a human
+being would exist in no more than a generation, and they were given millions of dollars
+to make this vision come true. Eventually it became obvious that commercial developers
+and government researchers had grossly underestimated the difficulty of the project.
+In 1974, in response to the criticism from James Lighthill and ongoing pressure from
+Congress, the U.S. and British Governments stopped funding undirected research into
+artificial intelligence, and the difficult years that followed would later be known as
+an "AI winter."
+
+In the early 1980s, AI research was revived by the commercial success of expert
+systems, a form of AI program that simulated the knowledge and analytical skills of
+human experts. By 1985, the market for AI had reached over a billion dollars. Along
+with this came a second AI winter in the late 1980s. In the 1990s and 2000s, AI
+achieved its greatest successes, albeit somewhat behind the scenes. Artificial
+intelligence is used for logistics, data mining, medical diagnosis, and many other
+areas throughout the technology industry.
+
+Deep learning began to dominate benchmark results around 2012. AlexNet, a convolutional
+neural network trained on ImageNet, dramatically outperformed all prior image
+classification systems. In 2017, the transformer architecture was introduced, enabling
+models to process sequences in parallel and attend to long-range dependencies with
+unprecedented efficiency. This unlocked a new paradigm: large language models trained
+on massive corpora of text could, with sufficient scale, exhibit emergent capabilities
+such as few-shot reasoning, code generation, and multilingual translation — none of
+which were explicitly programmed.
+
+By the early 2020s, models like GPT-3, PaLM, and Mistral demonstrated that scaling
+laws held across many orders of magnitude, and that a single general-purpose model
+could outperform narrow task-specific systems on a wide variety of benchmarks. The
+open-weight movement, championed in part by Mistral AI, challenged the assumption
+that frontier capability required closed, proprietary systems, releasing competitive
+models that researchers and developers could inspect, fine-tune, and deploy without
+restriction. This shift accelerated the pace of applied AI research globally and
+brought the question of AI governance, safety, and societal impact to the forefront
+of both academic and public discourse.
+
+---

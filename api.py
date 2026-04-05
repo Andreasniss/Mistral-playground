@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import FastAPI, HTTPException, Security, Depends
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
@@ -33,7 +34,7 @@ def _verify_api_key(api_key: str = Security(_API_KEY_HEADER)) -> str:
 
 class ChatRequest(BaseModel):
     message: str
-    system: str | None = None
+    system: Optional[str] = None
 
 
 class ChatResponse(BaseModel):

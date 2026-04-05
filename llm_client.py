@@ -1,6 +1,7 @@
 import time
 import uuid
 import random
+from typing import Optional
 from mistralai import Mistral
 import config
 from logger import get_logger
@@ -38,7 +39,7 @@ def _is_retryable(exc: Exception) -> bool:
     return any(str(code) in str(exc) for code in _RETRYABLE_STATUS_CODES)
 
 
-def _get_retry_after(exc: Exception) -> float | None:
+def _get_retry_after(exc: Exception) -> Optional[float]:
     """Extract the Retry-After value (seconds) from the exception headers.
 
     The Mistral API sets a Retry-After header on 429 responses to tell clients
@@ -111,10 +112,10 @@ def _call_with_retry(fn, trace_id: str):
 
 def chat(
     user_message: str,
-    system_message: str | None = None,
-    model: str | None = None,
-    max_tokens: int | None = None,
-    temperature: float | None = None,
+    system_message: Optional[str] = None,
+    model: Optional[str] = None,
+    max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
 ) -> str:
     """Send a chat message to Mistral and return the assistant reply as a string.
 

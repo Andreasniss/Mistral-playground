@@ -42,8 +42,5 @@ def get_logger(name: str) -> logging.Logger:
 
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
-    # Prevent log records from bubbling up to the root logger, which would
-    # cause duplicate output if the root logger also has handlers configured.
-    logger.propagate = False
 
     return logger
