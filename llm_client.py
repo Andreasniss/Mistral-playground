@@ -1,7 +1,8 @@
+import json
 import time
 import uuid
 import random
-from typing import Optional
+from typing import Callable, List, Optional
 from mistralai import Mistral
 from openai import OpenAI
 import config
@@ -216,5 +217,134 @@ def chat(
         usage.total_tokens,
     )
     logger.debug("[%s] Response content: %.120r", trace_id, content)
+
+    return content
+
+
+def chat_with_tools(
+    user_message: str,
+    tools: List[dict],
+    tool_executor: Callable[[str, dict], str],
+    system_message: Optional[str] = None,
+    model: Optional[str] = None,
+    max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+    top_p: Optional[float] = None,
+) -> str:
+    """Send a chat message with tool definitions and handle the full tool-call loop.
+
+    The model may respond by requesting one or more tool calls. This function
+    executes each tool via `tool_executor`, appends the results, and calls the
+    API again until the model produces a final text response.
+
+    Args:
+        user_message:   The user turn to send.
+        tools:          List of tool definitions in OpenAI/Mistral format:
+                        [{"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}]
+        tool_executor:  Callable(name, args) → str. Called for each tool the model
+                        requests. Return value is sent back as the tool result.
+        system_message: Optional system prompt.
+        model:          Override the model from config.
+        max_tokens:     Override the token limit from config.
+        temperature:    Override the sampling temperature from config.
+        top_p:          Override nucleus sampling from config.
+
+    Returns:
+        The assistant's final reply as a plain string.
+    """
+    trace_id = uuid.uuid4().hex[:8]
+    resolved_model = model or config.MISTRAL_MODEL
+    resolved_top_p = top_p if top_p is not None else config.MISTRAL_TOP_P
+    resolved_temp = temperature if temperature is not None else config.MISTRAL_TEMPERATURE
+    resolved_max_tokens = max_tokens or config.MISTRAL_MAX_TOKENS
+
+    messages = []
+    if system_message:
+        messages.append({"role": "system", "content": system_message})
+    messages.append({"role": "user", "content": user_message})
+
+    logger.info(
+        "[%s] Tool-call request — model=%s tools=%s user_message=%.80r",
+        trace_id,
+        resolved_model,
+        [t["function"]["name"] for t in tools],
+        user_message,
+    )
+
+    extra = {"top_p": resolved_top_p} if resolved_top_p is not None else {}
+
+    def _call(msgs):
+        if config.LLM_BACKEND == "local":
+            return get_client().chat.completions.create(
+                model=resolved_model,
+                messages=msgs,
+                tools=tools,
+                max_tokens=resolved_max_tokens,
+                temperature=resolved_temp,
+                **extra,
+            )
+        return get_client().chat.complete(
+            model=resolved_model,
+            messages=msgs,
+            tools=tools,
+            max_tokens=resolved_max_tokens,
+            temperature=resolved_temp,
+            **extra,
+        )
+
+    start = time.perf_counter()
+    try:
+        response = _call_with_retry(lambda: _call(messages), trace_id)
+
+        # Tool-call loop — the model may request multiple rounds of tool calls.
+        while response.choices[0].finish_reason == "tool_calls":
+            tool_calls = response.choices[0].message.tool_calls
+            logger.info("[%s] Model requested %d tool call(s)", trace_id, len(tool_calls))
+
+            # Append the assistant turn (with tool_calls) to the history.
+            messages.append({
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                    }
+                    for tc in tool_calls
+                ],
+            })
+
+            # Execute each requested tool and append its result.
+            for tc in tool_calls:
+                args = json.loads(tc.function.arguments)
+                logger.info("[%s] Calling tool %r with args %s", trace_id, tc.function.name, args)
+                result = tool_executor(tc.function.name, args)
+                logger.info("[%s] Tool %r returned: %.120r", trace_id, tc.function.name, result)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "name": tc.function.name,
+                    "content": result,
+                })
+
+            response = _call_with_retry(lambda: _call(messages), trace_id)
+
+    except Exception as exc:
+        logger.error("[%s] Tool-call request failed after %.2fs — %s", trace_id, time.perf_counter() - start, exc)
+        raise
+
+    elapsed = time.perf_counter() - start
+    usage = response.usage
+    content = response.choices[0].message.content
+
+    logger.info(
+        "[%s] Tool-call response — latency=%.2fs prompt_tokens=%s completion_tokens=%s total_tokens=%s",
+        trace_id,
+        elapsed,
+        usage.prompt_tokens,
+        usage.completion_tokens,
+        usage.total_tokens,
+    )
 
     return content

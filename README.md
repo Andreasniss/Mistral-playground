@@ -251,6 +251,7 @@ python3 main.py              # basic chat + summarize
 python3 demo_stream.py       # streaming tokens in real time
 python3 demo_chat.py         # interactive multi-turn chat loop
 python3 demo_compare.py      # same prompt through small vs large model
+python3 demo_tools.py        # function / tool calling demo
 ```
 
 **6. Run the tests** (no API key needed)
@@ -351,6 +352,59 @@ curl -X POST http://127.0.0.1:8000/summarize \
 
 ---
 
+## Function / Tool Calling
+
+`chat_with_tools()` in `llm_client.py` lets the model call your Python functions. The full loop is handled automatically:
+
+1. You define tools as JSON schemas and provide a `tool_executor(name, args) → str` function
+2. The model responds with `finish_reason="tool_calls"` when it wants to call a tool
+3. `chat_with_tools()` executes each tool, sends results back, and returns the final answer
+
+The included demo uses **[Open-Meteo](https://open-meteo.com/)** for live weather data — free, no API key, no registration required. City names are resolved to coordinates via Open-Meteo's geocoding API.
+
+```python
+from llm_client import chat_with_tools
+
+TOOLS = [{
+    "type": "function",
+    "function": {
+        "name": "get_current_weather",
+        "description": "Get the current weather for a city.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string"},
+                "format":   {"type": "string", "enum": ["celsius", "fahrenheit"]},
+            },
+            "required": ["location", "format"],
+        },
+    },
+}]
+
+def tool_executor(name, args):
+    if name == "get_current_weather":
+        return get_current_weather(**args)  # your implementation
+
+response = chat_with_tools(
+    user_message="What's the weather in Paris?",
+    tools=TOOLS,
+    tool_executor=tool_executor,
+)
+print(response)
+```
+
+Run the full demo:
+
+```bash
+python3 demo_tools.py
+```
+
+Works with both `LLM_BACKEND=api` and `LLM_BACKEND=local`. Note: tool calling reliability varies by local model — Mistral 7B supports it but the cloud API is more consistent.
+
+→ [Function calling guide](https://docs.mistral.ai/capabilities/function_calling/)
+
+---
+
 ## Next Steps to Explore
 
 These are not implemented in the playground yet but are worth knowing about and experimenting with.
@@ -370,10 +424,6 @@ Pass `safe_prompt=True` to enable Mistral's built-in guardrailing against sensit
 ### Structured / JSON output
 Use `response_format` with a JSON schema or Pydantic model to get typed, structured responses instead of free-form text.
 → [Structured output guide](https://docs.mistral.ai/capabilities/structured-output/custom_structured_output/)
-
-### Function / tool calling
-Let the model call your Python functions. Pass a `tools` list to `chat.complete()` and handle `finish_reason == "tool_calls"` in the response.
-→ [Function calling guide](https://docs.mistral.ai/capabilities/function_calling/)
 
 ### Observability integrations
 The `usage` object we already log (token counts) is the baseline signal. For richer dashboards, traces, and cost tracking, the official integrations are:
