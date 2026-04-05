@@ -8,8 +8,11 @@ from logger import get_logger
 
 logger = get_logger("llm_client")
 
-# Singleton Mistral client — created once and reused across calls so the SDK
-# does not re-initialise on every request.
+# Singleton Mistral client — created once and reused across all calls.
+# Creating a Mistral() object initialises an HTTP connection pool under the hood;
+# rebuilding it on every request would be wasteful and slower. By storing the
+# client in a module-level variable and returning the same instance every time,
+# the connection pool stays warm for the lifetime of the process.
 _client = None
 
 # Status codes worth retrying, per Mistral API docs:
@@ -22,7 +25,15 @@ _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 def get_client() -> Mistral:
-    """Return the shared Mistral SDK client, creating it on first call."""
+    """Return the shared Mistral SDK client, creating it on first call.
+
+    This function is defined here (not by the SDK) to control when and how the
+    client is created. The `global _client` line tells Python that any assignment
+    inside this function should update the module-level `_client` variable above,
+    not create a throwaway local variable that would be lost when the function
+    returns. Without it, `_client` would stay None forever and a new Mistral
+    object would be created on every call.
+    """
     global _client
     if _client is None:
         _client = Mistral(api_key=config.MISTRAL_API_KEY)
