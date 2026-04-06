@@ -19,10 +19,24 @@ end
 
 # Start Jaeger for tracing
 echo "🔍 Starting Jaeger for OpenTelemetry tracing..."
-docker run -d -p 16686:16686 -p 4317:4317 --name mistral-jaeger jaegertracing/all-in-one:latest
-if test $status -ne 0
-    echo "❌ Failed to start Jaeger. Is Docker running?"
-    exit 1
+
+# Check if Jaeger is already running
+if docker ps -a --format '{{.Names}}' | grep -q "mistral-jaeger"
+    echo "✅ Jaeger container already exists"
+    # Start the container if it's stopped
+    if docker inspect -f '{{.State.Running}}' mistral-jaeger | string match -q "false"
+        echo "🔄 Starting existing Jaeger container..."
+        docker start mistral-jaeger
+    else
+        echo "✅ Jaeger is already running"
+    end
+else
+    # Start new container
+    docker run -d -p 16686:16686 -p 4317:4317 --name mistral-jaeger jaegertracing/all-in-one:latest
+    if test $status -ne 0
+        echo "❌ Failed to start Jaeger. Is Docker running?"
+        exit 1
+    end
 end
 
 # Give Jaeger a moment to start
