@@ -3,10 +3,23 @@ import time
 import uuid
 import random
 from typing import Callable, List, Optional
-from mistralai import Mistral
+from mistralai.client import Mistral
 from openai import OpenAI
 import config
 from logger import get_logger
+
+# OpenTelemetry instrumentation
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+# Initialize OpenTelemetry tracing with a service name
+resource = Resource.create({"service.name": "mistral-playground"})
+trace.set_tracer_provider(TracerProvider(resource=resource))
+otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")
+trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter))
 
 logger = get_logger("llm_client")
 
@@ -152,6 +165,17 @@ def chat(
     # response entries can be correlated in the log file.
     trace_id = uuid.uuid4().hex[:8]
     resolved_model = model or config.MISTRAL_MODEL
+    resolved_top_p = top_p if top_p is not None else config.MISTRAL_TOP_P
+    
+    # OpenTelemetry tracing
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span("mistral_chat") as span:
+        span.set_attribute("model", resolved_model)
+        span.set_attribute("user_message", user_message)
+        span.set_attribute("max_tokens", max_tokens or config.MISTRAL_MAX_TOKENS)
+        span.set_attribute("temperature", temperature if temperature is not None else config.MISTRAL_TEMPERATURE)
+        if resolved_top_p is not None:
+            span.set_attribute("top_p", resolved_top_p)
 
     # Build the messages array. System message must come first if present.
     # Valid roles: "system", "user", "assistant", "tool"
@@ -252,8 +276,22 @@ def chat_with_tools(
     Returns:
         The assistant's final reply as a plain string.
     """
-    trace_id = uuid.uuid4().hex[:8]
     resolved_model = model or config.MISTRAL_MODEL
+    resolved_top_p = top_p if top_p is not None else config.MISTRAL_TOP_P
+    resolved_temp = temperature if temperature is not None else config.MISTRAL_TEMPERATURE
+    resolved_max_tokens = max_tokens or config.MISTRAL_MAX_TOKENS
+
+    # OpenTelemetry tracing
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span("mistral_chat_with_tools") as span:
+        span.set_attribute("user_message", user_message)
+        span.set_attribute("num_tools", len(tools))
+        span.set_attribute("model", resolved_model)
+        span.set_attribute("max_tokens", resolved_max_tokens)
+        span.set_attribute("temperature", resolved_temp)
+        if resolved_top_p is not None:
+            span.set_attribute("top_p", resolved_top_p)
+        trace_id = uuid.uuid4().hex[:8]
     resolved_top_p = top_p if top_p is not None else config.MISTRAL_TOP_P
     resolved_temp = temperature if temperature is not None else config.MISTRAL_TEMPERATURE
     resolved_max_tokens = max_tokens or config.MISTRAL_MAX_TOKENS

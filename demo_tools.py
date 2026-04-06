@@ -122,5 +122,29 @@ def run():
         print("-" * 60)
 
 
+def interactive_mode():
+    """Allow the user to ask about the weather in any city interactively."""
+    print("\nInteractive Mode: Ask about the weather in any city!")
+    print("Type 'exit' to quit.\n")
+
+    while True:
+        user_input = input("You: ").strip()
+        if user_input.lower() == 'exit':
+            break
+
+        print(f"\nUser: {user_input}")
+        response = chat_with_tools(
+            user_message=user_input,
+            tools=TOOLS,
+            tool_executor=tool_executor,
+        )
+        print(f"Assistant: {response}")
+        print("-" * 60)
+
+
 if __name__ == "__main__":
-    run()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--interactive":
+        interactive_mode()
+    else:
+        run()

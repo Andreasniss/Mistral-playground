@@ -17,6 +17,9 @@ Mistral-playground/
 ├── prompts_loader.py     # utility to load prompt files from prompts/
 ├── main.py               # demo application using the above modules
 ├── api.py                # FastAPI server — exposes /health, /chat, /summarize
+├── demo_streamlit.py     # 🌟 Streamlit web interface (recommended demo)
+├── start_streamlit.fish  # 🚀 Start Streamlit with Jaeger (fish shell)
+├── start_streamlit.sh    # 🚀 Start Streamlit with Jaeger (bash/zsh)
 ├── requirements.txt      # project dependencies
 ├── prompts/
 │   ├── system_prompt.txt # default system prompt
@@ -183,6 +186,8 @@ source .venv/bin/activate.fish
 pip install -r requirements.txt
 ```
 
+> **Note:** This includes Streamlit for the web demo interface. If you only want to run the CLI demos, you can skip installing Streamlit.
+
 **3. Create your `.env` file**
 
 ```bash
@@ -252,7 +257,95 @@ python3 demo_stream.py       # streaming tokens in real time
 python3 demo_chat.py         # interactive multi-turn chat loop
 python3 demo_compare.py      # same prompt through small vs large model
 python3 demo_tools.py        # function / tool calling demo
+python3 demo_tools.py --interactive  # interactive weather queries
 ```
+
+**🌟 Preferred: Streamlit Web Demo (Recommended)**
+
+The most user-friendly way to experience the Mistral API is through the interactive Streamlit web interface:
+
+```bash
+.venv/bin/streamlit run demo_streamlit.py
+```
+
+This launches a web browser with a modern chat interface featuring:
+- 🌤️ **Weather tool integration** – Ask "What's the weather in Paris?" and get real-time data
+- 💬 **Conversational chat** – Regular chat for any other questions
+- 📊 **OpenTelemetry instrumentation** – Full observability with Jaeger tracing
+- 📋 **Detailed configuration display** – See current model settings
+- 💡 **Starter guide** – Helpful examples and tips for new users
+- 🎨 **Professional UI** – Clean, responsive design with chat bubbles
+
+The Streamlit demo combines all the best features in one easy-to-use interface!
+
+**With OpenTelemetry (when Jaeger is running):**
+- 🔍 **User interaction tracking** – See when users ask questions
+- ⚡ **Performance monitoring** – Measure response times
+- 📈 **Usage analytics** – Track weather vs regular chat usage
+- 🚨 **Error monitoring** – Capture and analyze errors
+
+> **💡 Tip:** For the best experience, we recommend using the Streamlit web demo (`demo_streamlit.py`) as your primary interface. It provides the most comprehensive and user-friendly way to interact with all the Mistral API features.
+
+**5.5 Run Streamlit with Full Observability**
+
+**Easy way:** Use the provided startup script:
+
+```bash
+# For fish shell users
+fish start_streamlit.fish
+
+# For bash/zsh users
+bash start_streamlit.sh
+```
+
+**Manual way:** Start components separately:
+
+```bash
+# Terminal 1: Start Jaeger
+docker run -d -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one:latest
+
+# Terminal 2: Start Streamlit demo
+.venv/bin/streamlit run demo_streamlit.py
+```
+
+**💡 How to Exit Streamlit**
+
+When you're done with the demo:
+
+```bash
+# In the terminal where Streamlit is running:
+Ctrl + C  # Gracefully shut down the Streamlit server
+
+# To also stop Jaeger:
+docker stop mistral-jaeger
+docker rm mistral-jaeger
+```
+
+**Important notes:**
+- `Ctrl + C` stops the Streamlit server but keeps Jaeger running
+- Closing the browser tab doesn't stop the server - use `Ctrl + C`
+- Jaeger container persists until you explicitly remove it
+- All session data is cleared when you exit
+
+Now you'll see **both** in Jaeger at `http://localhost:16686`:
+- Mistral API calls (from `llm_client.py`)
+- Streamlit UI events (user interactions, chat flows, errors)
+
+**6. Run the Full Demo with Observability**
+
+Use the `start_demo.fish` script to automate the setup and demo process:
+
+```bash
+fish start_demo.fish
+```
+
+This script will:
+1. Activate the virtual environment.
+2. Start Jaeger (if not already running) for OpenTelemetry tracing.
+3. Run `demo_chat.py` (interactive chat) and `demo_tools.py` (tool calling) sequentially.
+4. Print instructions to view traces in Jaeger at `http://localhost:16686`.
+
+Perfect for interviews or presentations! 🎤
 
 **6. Run the tests** (no API key needed)
 
@@ -349,6 +442,70 @@ curl -X POST http://127.0.0.1:8000/summarize \
 - **Quiet the console**: set `LOG_LEVEL=WARNING` in `.env` — errors still appear but request/response logs are suppressed
 - **Read the full log**: `cat logs/app.log` — always written at `DEBUG` level regardless of `LOG_LEVEL`
 - **Tune retry behaviour**: adjust `RETRY_MAX_ATTEMPTS`, `RETRY_BASE_DELAY`, `RETRY_MAX_DELAY` in `.env`
+- **Interactive weather queries**: run `python3 demo_tools.py --interactive` to ask about the weather in any city dynamically
+- **Enable OpenTelemetry tracing**: see the [OpenTelemetry setup guide](#opentelemetry-tracing) below
+
+---
+
+## Observability: Tracing and Metrics
+
+The project supports observability through **OpenTelemetry**, with built-in tracing for API calls and tool interactions. Traces are exported to an OpenTelemetry collector (e.g., Jaeger) for visualization.
+
+### Tracing with Jaeger
+
+#### Setup
+
+1. **Install OpenTelemetry packages** (already included in `requirements.txt`):
+   ```bash
+   pip install opentelemetry-sdk opentelemetry-exporter-otlp
+   ```
+
+2. **Run Jaeger (OpenTelemetry collector)**:
+   ```bash
+   docker run -d --name jaeger \
+     -e COLLECTOR_OTLP_ENABLED=true \
+     -p 16686:16686 \
+     -p 4318:4318 \
+     jaegertracing/all-in-one:latest
+   ```
+
+3. **View traces**: Open `http://localhost:16686` in your browser to see traces for API calls and tool interactions.
+
+#### Instrumentation
+
+- **`chat()`**: Traces API calls with attributes like `model`, `user_message`, and latency.
+- **`chat_with_tools()`**: Traces tool interactions, including tool names and arguments.
+
+#### Example Trace
+
+```
+Span: mistral_chat
+  Attributes:
+    model: mistral-large-latest
+    user_message: "What's the weather in Paris?"
+  Duration: 1.2s
+```
+
+#### Configuration
+
+The OpenTelemetry exporter is configured in `llm_client.py` to send traces to `http://localhost:4318/v1/traces`. If no collector is running, traces will still be generated but not exported (you'll see connection errors in the logs, which are harmless). Update the endpoint if your collector runs elsewhere.
+
+To disable tracing, comment out the OpenTelemetry initialization in `llm_client.py`.
+
+### Metrics with Prometheus (Future Extension)
+
+While this project currently focuses on **tracing with Jaeger**, you can extend it to include **metrics with Prometheus** for monitoring:
+
+- **Use Case**: Track metrics like request latency, error rates, or token usage.
+- **Tools**: Prometheus for scraping metrics + Grafana for dashboards.
+- **Implementation**: Add Prometheus instrumentation to `llm_client.py` (e.g., using `prometheus-client`).
+
+Example metrics to track:
+- `mistral_request_latency_seconds` (Histogram)
+- `mistral_request_errors_total` (Counter)
+- `mistral_token_usage` (Gauge)
+
+This is a planned extension but not yet implemented. Contributions welcome!
 
 ---
 
