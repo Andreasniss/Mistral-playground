@@ -9,6 +9,8 @@ import streamlit as st
 import json
 import urllib.request
 import urllib.parse
+import os
+from pathlib import Path
 from llm_client import chat, chat_with_tools, get_client
 from prompts_loader import load_prompt
 import config
@@ -104,7 +106,100 @@ def tool_executor(name: str, args: dict) -> str:
     """Route tool calls to their implementations."""
     if name == "get_current_weather":
         return get_current_weather(**args)
+    elif name == "get_hr_policy_info":
+        return get_hr_policy_info(**args)
     raise ValueError(f"Unknown tool: {name}")
+
+
+# --- RAG Implementation (HR Policy Knowledge Base) --------------------------
+
+def load_hr_policy():
+    """Load the HR policy document from the RAG directory."""
+    rag_dir = Path("RAG")
+    hr_policy_path = rag_dir / "hr_policy.md"
+    
+    if not hr_policy_path.exists():
+        return "HR policy document not found."
+    
+    try:
+        with open(hr_policy_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        return f"Error loading HR policy: {str(e)}"
+
+def search_hr_policy(query: str, hr_policy_content: str) -> str:
+    """Simple keyword-based search in HR policy document."""
+    query_lower = query.lower()
+    
+    # Split into sections
+    sections = []
+    current_section = {"title": "", "content": ""}
+    lines = hr_policy_content.split('\n')
+    
+    for line in lines:
+        if line.startswith('#'):
+            if current_section["title"]:
+                sections.append(current_section)
+            current_section = {"title": line.strip('#').strip(), "content": ""}
+        elif line.startswith('##'):
+            if current_section["title"]:
+                sections.append(current_section)
+            current_section = {"title": line.strip('#').strip(), "content": ""}
+        elif line.startswith('###'):
+            if current_section["title"]:
+                sections.append(current_section)
+            current_section = {"title": line.strip('#').strip(), "content": ""}
+        else:
+            current_section["content"] += line + "\n"
+    
+    if current_section["title"]:
+        sections.append(current_section)
+    
+    # Find relevant sections - more flexible matching
+    relevant_sections = []
+    for section in sections:
+        section_lower = section["title"].lower() + " " + section["content"].lower()
+        # Check for any vacation/leave related terms
+        if (query_lower in section_lower or
+            ("vacation" in query_lower and "leave" in section_lower) or
+            ("holiday" in query_lower and ("leave" in section_lower or "vacation" in section_lower)) or
+            ("days" in query_lower and ("vacation" in section_lower or "leave" in section_lower))):
+            relevant_sections.append(section)
+    
+    if not relevant_sections:
+        return "No relevant information found in HR policy."
+    
+    # Format the results
+    result = "Relevant HR Policy Information:\n\n"
+    for i, section in enumerate(relevant_sections[:3]):  # Limit to top 3 sections
+        result += f"### {section['title']}\n\n"
+        result += f"{section['content'].strip()}\n\n"
+        result += "---\n\n"
+    
+    return result.strip()
+
+
+def get_hr_policy_info(query: str) -> str:
+    """Get HR policy information using RAG approach."""
+    # Trace the RAG operation
+    trace_streamlit_event("rag_hr_policy_query", {
+        "query": query
+    })
+    
+    hr_policy_content = load_hr_policy()
+    if "Error" in hr_policy_content or "not found" in hr_policy_content:
+        return hr_policy_content
+    
+    result = search_hr_policy(query, hr_policy_content)
+    
+    # Trace the RAG result
+    trace_streamlit_event("rag_hr_policy_result", {
+        "query": query,
+        "result_length": len(result),
+        "has_results": "Yes" if "Relevant HR Policy Information" in result else "No"
+    })
+    
+    return result
 
 
 # --- Tool definitions (sent to the model) ------------------------------------
@@ -131,6 +226,23 @@ TOOLS = [
                 "required": ["location", "format"],
             },
         },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_hr_policy_info",
+            "description": "Get information from the company HR policy and benefits documentation.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The HR-related question or topic to look up, e.g., 'how many vacation days', 'sick leave policy', 'remote work rules'",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
     }
 ]
 
@@ -139,25 +251,31 @@ def main():
     # Trace the main function execution
     trace_streamlit_event("streamlit_main_start")
     
-    st.set_page_config(page_title="Mistral AI Chat with Tools", layout="wide")
-    st.title("🤖 Mistral AI Chat Demo with Weather Tools")
+    st.set_page_config(page_title="Mistral AI Chat with Tools & RAG", layout="wide")
+    st.title("🤖 Mistral AI Chat Demo with Weather Tools & HR RAG")
     
     # Welcome message with starter hint
     with st.expander("💡 Click here for a quick start guide", expanded=True):
         st.markdown("""
-        **Welcome!** This demo lets you chat with Mistral AI and get real-time weather information.
+        **Welcome!** This demo lets you chat with Mistral AI with multiple tool integrations.
         
-        🌤️ **Try asking about the weather:**
+        🌤️ **Weather Information:**
         - "What's the weather in Paris?"
         - "Should I bring a jacket in London?"
         - "Compare weather in New York and Tokyo"
         
-        💬 **Or ask anything else:**
+        📚 **HR Policy Questions (RAG-powered):**
+        - "How many vacation days do I get?"
+        - "What's the remote work policy?"
+        - "How much sick leave do employees have?"
+        - "What benefits does Mistrag offer?"
+        
+        💬 **General Chat:**
         - "Tell me a joke"
         - "What's the capital of France?"
         - "Explain quantum computing simply"
         
-        The AI will automatically use weather tools when needed!
+        The AI will automatically use the appropriate tools when needed!
         """)
     
     # Trace UI initialization
@@ -201,12 +319,27 @@ def main():
             try:
                 # Check if the prompt is weather-related
                 weather_keywords = ["weather", "temperature", "forecast", "climate"]
+                hr_keywords = ["vacation", "holiday", "leave", "benefit", "policy", "hr", "sick leave", 
+                              "remote work", "compensation", "pension", "insurance", "maternity", "paternity"]
+                
                 if any(keyword in prompt.lower() for keyword in weather_keywords):
                     # Trace weather tool usage
                     trace_streamlit_event("weather_tool_invoked", {
                         "user_query": prompt
                     })
                     # Use tool calling for weather questions
+                    response = chat_with_tools(
+                        user_message=prompt,
+                        tools=TOOLS,
+                        tool_executor=tool_executor,
+                        system_message=system_message
+                    )
+                elif any(keyword in prompt.lower() for keyword in hr_keywords):
+                    # Trace HR RAG tool usage
+                    trace_streamlit_event("hr_rag_tool_invoked", {
+                        "user_query": prompt
+                    })
+                    # Use tool calling for HR questions
                     response = chat_with_tools(
                         user_message=prompt,
                         tools=TOOLS,
@@ -260,20 +393,28 @@ def main():
     2. Press Enter to send
     3. The AI will respond conversationally
     4. Continue the conversation naturally
+    
+    **Features:**
+    - 🌤️ Real-time weather data
+    - 📚 HR policy lookup (RAG)
+    - 💬 General conversation
     """)
+    
     st.sidebar.markdown("""
-    ### Weather Examples
-    Try these weather-related questions:
-    - "What's the weather in Paris?"
-    - "Should I bring a jacket in London?"
-    - "Compare weather in New York and Tokyo"
-    - "Is it sunny in Barcelona today?"
+    ### 📚 HR Policy Examples (RAG)
+    Try these HR-related questions:
+    - "How many vacation days do I get per year?"
+    - "What's the remote work policy at Mistrag?"
+    - "How much sick leave do I have?"
+    - "What benefits are included in the compensation package?"
+    - "What's the parental leave policy?"
     """)
     st.sidebar.markdown("""
     ### 📝 Notes
     - The conversation history is maintained during this session
     - Refresh the page to start a new conversation
     - Weather data powered by **Open-Meteo** (free, no API key needed)
+    - HR policy data powered by **RAG** (local document search)
     """)
     
     st.sidebar.markdown("""
