@@ -1,1 +1,2 @@
-See [agent.md](agent.md) for the full guide to working in this repo.
+# Instructions
+See [AGENTS.md](AGENTS.md) for project-wide architecture and coding rules.
