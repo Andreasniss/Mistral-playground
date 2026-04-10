@@ -4,6 +4,38 @@ A structured Python playground for testing the Mistral API, designed for develop
 
 ---
 
+## Quick Start
+
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/Andreasniss/Mistral-playground
+   cd Mistral-playground
+   ```
+
+2. **Get a Mistral API key**:
+   - Sign up at [console.mistral.ai](https://console.mistral.ai) to get your API key.
+
+3. **Set up your environment**:
+   ```bash
+   cp .env.example .env
+   ```
+   Then, add your API key to `.env`:
+   ```ini
+   MISTRAL_API_KEY=your_mistral_api_key_here
+   ```
+
+4. **Run the Streamlit demo**:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   .venv/bin/streamlit run demo_streamlit.py
+   ```
+
+For more details, see the [Getting Started](#getting-started) and [How It Was Set Up](#how-it-was-set-up) sections.
+
+---
+
 ## 🌟 Streamlit Web Demo
 
 The easiest way to experience the Mistral API is through the interactive Streamlit web interface. This demo provides a modern chat interface with the following features:
