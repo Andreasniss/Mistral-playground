@@ -4,6 +4,35 @@ A structured Python playground for testing the Mistral API, designed for develop
 
 ---
 
+## 🌟 Streamlit Web Demo
+
+The easiest way to experience the Mistral API is through the interactive Streamlit web interface. This demo provides a modern chat interface with the following features:
+
+- 🌤️ **Weather Tool Integration**: Ask "What's the weather in Paris?" and get real-time data from Open-Meteo.
+- 💬 **Conversational Chat**: Engage in multi-turn conversations with the Mistral API.
+- 📊 **OpenTelemetry Instrumentation**: Full observability with Jaeger tracing for monitoring performance and errors.
+- 📋 **Configuration Display**: View and adjust model settings directly from the UI.
+- 💡 **Starter Guide**: Helpful examples and tips for new users.
+- 🎨 **Professional UI**: Clean, responsive design with chat bubbles.
+
+To run the Streamlit demo:
+
+```bash
+.venv/bin/streamlit run demo_streamlit.py
+```
+
+For full observability with Jaeger tracing, use the provided startup scripts:
+
+```bash
+# For fish shell users
+fish start_streamlit.fish
+
+# For bash/zsh users
+bash start_streamlit.sh
+```
+
+---
+
 ## Project Structure
 
 The project is organized into modular components for easy maintenance and extensibility. Below is an overview of the key files and directories:
