@@ -1,10 +1,12 @@
 # Mistral Playground
 
-A structured Python playground for testing the Mistral API, following LLM project best practices.
+A structured Python playground for testing the Mistral API, designed for developers and researchers who want to experiment with LLM integrations while following best practices.
 
 ---
 
 ## Project Structure
+
+The project is organized into modular components for easy maintenance and extensibility. Below is an overview of the key files and directories:
 
 ```
 Mistral-playground/
@@ -37,9 +39,9 @@ Mistral-playground/
 
 ## How It Was Set Up
 
-### 1. Secrets management — `.env` + `.gitignore`
+### 1. Secrets and Configuration
 
-The first priority is keeping the API key out of git. `.env` holds the real key locally and is listed in `.gitignore` so it can never be accidentally committed. `.env.example` is a safe placeholder that is committed so others know what variables to set.
+Secrets and configuration are managed using `.env` and `config.py`. The `.env` file holds sensitive information like API keys, while `config.py` loads and validates these settings using `python-dotenv`. This ensures that the API key is never accidentally committed to the repository.
 
 ```
 MISTRAL_API_KEY=your_mistral_api_key_here
@@ -48,9 +50,7 @@ MISTRAL_MAX_TOKENS=1024
 MISTRAL_TEMPERATURE=0.0
 ```
 
-### 2. Centralised config — `config.py`
-
-All settings are loaded once at import time using `python-dotenv`. If `MISTRAL_API_KEY` is missing, the module raises an `EnvironmentError` immediately — failing fast rather than producing a confusing error later.
+The `config.py` module loads settings at import time and raises an `EnvironmentError` if `MISTRAL_API_KEY` is missing, ensuring fast failure rather than confusing errors later.
 
 ```python
 load_dotenv()
@@ -162,6 +162,8 @@ Tests use `unittest.mock` to patch `get_client()`, so they run without an API ke
 
 ## Getting Started
 
+Before you begin, ensure you have Python 3.8+ and Git installed on your system.
+
 **1. Clone the repo and create a virtual environment**
 
 ```bash
@@ -203,14 +205,14 @@ Then open `.env` and replace `your_mistral_api_key_here` with your actual key fr
 
 ## Running Locally with Ollama (no API key needed)
 
-Instead of the Mistral cloud API you can run a model on your own machine using [Ollama](https://ollama.com). No API key is required.
+Instead of the Mistral cloud API, you can run a model on your own machine using [Ollama](https://ollama.com). No API key is required.
 
 **1. Install Ollama and pull a model**
 
 ```bash
 brew install ollama
-ollama serve          # start the local server (keep this running)
-ollama pull mistral   # download the model (~4 GB)
+ollama serve &  # Start the server in the background
+ollama pull mistral  # Download the Mistral 7B model
 ```
 
 Pick a model based on how much RAM you have:
@@ -271,13 +273,13 @@ The most user-friendly way to experience the Mistral API is through the interact
 .venv/bin/streamlit run demo_streamlit.py
 ```
 
-This launches a web browser with a modern chat interface featuring:
-- 🌤️ **Weather tool integration** – Ask "What's the weather in Paris?" and get real-time data
-- 💬 **Conversational chat** – Regular chat for any other questions
-- 📊 **OpenTelemetry instrumentation** – Full observability with Jaeger tracing
-- 📋 **Detailed configuration display** – See current model settings
-- 💡 **Starter guide** – Helpful examples and tips for new users
-- 🎨 **Professional UI** – Clean, responsive design with chat bubbles
+The Streamlit demo includes:
+- 🌤️ **Weather Tool**: Fetch real-time weather data for any city.
+- 💬 **Conversational Chat**: Engage in multi-turn conversations.
+- 📊 **OpenTelemetry**: Monitor performance and errors with Jaeger.
+- 📋 **Configuration Display**: View and adjust model settings.
+- 💡 **Starter Guide**: Get tips and examples for using the API.
+- 🎨 **Professional UI**: Clean, responsive design with chat bubbles.
 
 The Streamlit demo combines all the best features in one easy-to-use interface!
 
@@ -362,6 +364,8 @@ python3 -m pytest tests/
 
 The project includes a local HTTP API built with FastAPI (`api.py`). It exposes the same `chat()` and `summarize()` functionality over HTTP, making it easy to call from any tool — curl, Postman, a frontend, another service — without writing Python.
 
+The FastAPI server is ideal for integrating the Mistral API into larger applications or services. It provides a RESTful interface for interacting with the API, making it easy to call from any tool or language.
+
 ### Why FastAPI was added
 
 - **Interactive docs**: FastAPI auto-generates a `/docs` UI (Swagger) at startup. You can test every endpoint in the browser with no extra tooling.
@@ -439,14 +443,18 @@ curl -X POST http://127.0.0.1:8000/summarize \
 
 ## Extending the Playground
 
-- **Add a new prompt**: create a `.txt` file in `prompts/` and load it with `load_prompt("your_file.txt")`
-- **Change the model**: update `MISTRAL_MODEL` in `.env` — no code changes needed. See the [full model list](https://docs.mistral.ai/getting-started/models/models_overview/)
-- **Add a new use case**: write a function in `main.py` that calls `chat()` with your prompt
-- **Quiet the console**: set `LOG_LEVEL=WARNING` in `.env` — errors still appear but request/response logs are suppressed
+- **Add a new prompt**: Create a file `prompts/your_prompt.txt` with your prompt text, then load it in your code:
+  ```python
+  from prompts_loader import load_prompt
+  greeting_prompt = load_prompt("your_prompt.txt")
+  ```
+- **Change the model**: Update `MISTRAL_MODEL` in `.env` — no code changes needed. See the [full model list](https://docs.mistral.ai/getting-started/models/models_overview/)
+- **Add a new use case**: Write a function in `main.py` that calls `chat()` with your prompt
+- **Quiet the console**: Set `LOG_LEVEL=WARNING` in `.env` — errors still appear but request/response logs are suppressed
 - **Read the full log**: `cat logs/app.log` — always written at `DEBUG` level regardless of `LOG_LEVEL`
-- **Tune retry behaviour**: adjust `RETRY_MAX_ATTEMPTS`, `RETRY_BASE_DELAY`, `RETRY_MAX_DELAY` in `.env`
-- **Interactive weather queries**: run `python3 demo_tools.py --interactive` to ask about the weather in any city dynamically
-- **Enable OpenTelemetry tracing**: see the [OpenTelemetry setup guide](#opentelemetry-tracing) below
+- **Tune retry behaviour**: Adjust `RETRY_MAX_ATTEMPTS`, `RETRY_BASE_DELAY`, `RETRY_MAX_DELAY` in `.env`
+- **Interactive weather queries**: Run `python3 demo_tools.py --interactive` to ask about the weather in any city dynamically
+- **Enable OpenTelemetry tracing**: See the [OpenTelemetry setup guide](#opentelemetry-tracing) below
 
 ---
 
@@ -456,23 +464,14 @@ The project supports observability through **OpenTelemetry**, with built-in trac
 
 ### Tracing with Jaeger
 
-#### Setup
+To set up tracing with Jaeger:
 
-1. **Install OpenTelemetry packages** (already included in `requirements.txt`):
-   ```bash
-   pip install opentelemetry-sdk opentelemetry-exporter-otlp
-   ```
+```bash
+pip install opentelemetry-sdk opentelemetry-exporter-otlp
+docker run -d --name jaeger -e COLLECTOR_OTLP_ENABLED=true -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
+```
 
-2. **Run Jaeger (OpenTelemetry collector)**:
-   ```bash
-   docker run -d --name jaeger \
-     -e COLLECTOR_OTLP_ENABLED=true \
-     -p 16686:16686 \
-     -p 4318:4318 \
-     jaegertracing/all-in-one:latest
-   ```
-
-3. **View traces**: Open `http://localhost:16686` in your browser to see traces for API calls and tool interactions.
+Then, view traces at `http://localhost:16686`.
 
 #### Instrumentation
 
@@ -520,7 +519,7 @@ This is a planned extension but not yet implemented. Contributions welcome!
 2. The model responds with `finish_reason="tool_calls"` when it wants to call a tool
 3. `chat_with_tools()` executes each tool, sends results back, and returns the final answer
 
-The included demo uses **[Open-Meteo](https://open-meteo.com/)** for live weather data — free, no API key, no registration required. City names are resolved to coordinates via Open-Meteo's geocoding API.
+Tool calling is useful for tasks that require external data or actions, such as fetching weather data, querying databases, or interacting with APIs. The included demo uses **[Open-Meteo](https://open-meteo.com/)** for live weather data — free, no API key, no registration required. City names are resolved to coordinates via Open-Meteo's geocoding API.
 
 ```python
 from llm_client import chat_with_tools
@@ -567,10 +566,10 @@ Works with both `LLM_BACKEND=api` and `LLM_BACKEND=local`. Note: tool calling re
 
 ## Next Steps to Explore
 
-These are not implemented in the playground yet but are worth knowing about and experimenting with.
+These features are not yet implemented in the playground but are worth knowing about and experimenting with.
 
 ### Streaming responses
-Instead of waiting for the full reply, stream tokens as they are generated. Useful for chat UIs and long outputs.
+Stream tokens in real-time for a more interactive chat experience. Useful for chat UIs and long outputs.
 → [Streaming guide](https://docs.mistral.ai/capabilities/completion/) — swap `chat.complete` for `chat.stream` in `llm_client.py`
 
 ### Reproducible outputs with `random_seed`
