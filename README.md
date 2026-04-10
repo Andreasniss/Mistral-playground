@@ -11,6 +11,9 @@ Mistral-playground/
 ├── .env                  # 🔒 secrets — NEVER commit (create from .env.example)
 ├── .env.example          # template with placeholder values — safe to commit
 ├── .gitignore            # excludes .env, logs/, and other generated files
+├── AGENTS.md             # guide for coding agents working in this repo
+├── CLAUDE.md             # Claude-specific notes
+├── LICENSE               # project license
 ├── config.py             # loads and validates env vars (model, params, key, log level)
 ├── logger.py             # configures logging to stdout and logs/app.log
 ├── llm_client.py         # single Mistral API wrapper with tracing and logging
