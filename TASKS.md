@@ -1,6 +1,6 @@
 # TASKS.md
 
-In-flight and backlog items for this repo. When something becomes a real commitment, it also gets a due date in Todoist.
+In-flight and backlog items for this repo.
 
 ---
 
