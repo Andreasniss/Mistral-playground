@@ -4,6 +4,18 @@ This file is the single reference for any coding agent (Claude Code, Vibestral, 
 
 ---
 
+## Task Tracking
+
+Task state lives in `TASKS.md`. Read it before starting work.
+
+- **Starting a task** → move it from Backlog to In Progress
+- **Done** → move it to the Done section
+- **New work discovered** → add it to the Backlog
+
+`TASKS.md` is the single source of truth for task state. Do not track work in comments or external tools.
+
+---
+
 ## What This Repo Is
 
 A structured Python playground for the Mistral AI API that demonstrates production-grade patterns: centralised config, dual-handler logging, a singleton API client, prompt file management, retry with exponential backoff, and fully mocked unit tests.
@@ -21,6 +33,7 @@ Mistral-playground/
 ├── llm_client.py       # chat() — the only public API entry point; get_client() singleton
 ├── prompts_loader.py   # load_prompt(filename) — reads .txt files from prompts/
 ├── main.py             # run_basic_chat(), run_summarize() — wires modules together
+├── demo_structured.py  # structured JSON output with response_format + Pydantic validation
 ├── demo.ipynb          # interactive notebook demonstrating every module
 ├── prompts/
 │   ├── system_prompt.txt

@@ -24,18 +24,18 @@ In-flight and backlog items for this repo.
 - [ ] Expand RAG demo beyond `hr_policy.md` — add chunking strategy comparison (fixed-size vs. sentence vs. semantic), evaluate retrieval quality
 
 ### Models / Capabilities
-- [ ] Structured JSON output demo — use `response_format` with a Pydantic model, add as a section in `demo.ipynb`
 - [ ] `random_seed` reproducibility demo — show deterministic outputs for the same prompt across runs
 - [ ] `safe_prompt` / content moderation demo — test guardrailing with and without system prompt
 
 ### Developer Experience
-- [ ] Add `MISTRAL_MODEL` to the Quick Start `.env` example (currently only shows `MISTRAL_API_KEY`)
 - [ ] Pre-commit hook for `ruff` / `black` linting
 
 ---
 
 ## Done
 
+- [x] Structured JSON output demo — `demo_structured.py` (Pydantic + `response_format`)
+- [x] `MISTRAL_MODEL` in `.env.example` — already present
 - [x] Streamlit web demo with weather tool integration
 - [x] OpenTelemetry tracing with Jaeger
 - [x] FastAPI server with `X-API-Key` auth and `/health`, `/chat`, `/summarize` endpoints
