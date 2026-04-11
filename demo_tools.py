@@ -128,8 +128,13 @@ def interactive_mode():
     print("Type 'exit' to quit.\n")
 
     while True:
-        user_input = input("You: ").strip()
-        if user_input.lower() == 'exit':
+        try:
+            user_input = input("You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nGoodbye.")
+            break
+
+        if user_input.lower() == "exit":
             break
 
         print(f"\nUser: {user_input}")

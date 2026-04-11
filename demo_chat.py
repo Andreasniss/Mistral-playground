@@ -3,8 +3,11 @@ demo_chat.py — interactive multi-turn chat loop
 
 Maintains conversation history so the model can answer follow-up questions
 with full context. Type 'exit' or press Ctrl+C to quit.
+
+Note: uses get_client() directly (not llm_client.chat()) because chat()
+builds a fresh messages array each call and cannot carry history.
 """
-from llm_client import chat, get_client
+from llm_client import get_client
 from prompts_loader import load_prompt
 import config
 
@@ -13,7 +16,8 @@ def run():
     print("=== Multi-Turn Chat ===")
     print("Type your message and press Enter. Type 'exit' to quit.\n")
 
-    system_message = load_prompt("system_prompt.txt")
+    client = get_client()
+    messages = [{"role": "system", "content": load_prompt("system_prompt.txt")}]
 
     while True:
         try:
@@ -28,7 +32,25 @@ def run():
             print("Goodbye.")
             break
 
-        reply = chat(user_input, system_message=system_message)
+        messages.append({"role": "user", "content": user_input})
+
+        if config.LLM_BACKEND == "local":
+            response = client.chat.completions.create(
+                model=config.MISTRAL_MODEL,
+                messages=messages,
+                max_tokens=config.MISTRAL_MAX_TOKENS,
+                temperature=config.MISTRAL_TEMPERATURE,
+            )
+        else:
+            response = client.chat.complete(
+                model=config.MISTRAL_MODEL,
+                messages=messages,
+                max_tokens=config.MISTRAL_MAX_TOKENS,
+                temperature=config.MISTRAL_TEMPERATURE,
+            )
+
+        reply = response.choices[0].message.content
+        messages.append({"role": "assistant", "content": reply})
         print(f"\nAssistant: {reply}\n")
 
 
