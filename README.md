@@ -76,6 +76,7 @@ Mistral-playground/
 ├── .gitignore            # excludes .env, logs/, and other generated files
 ├── AGENTS.md             # guide for coding agents working in this repo
 ├── CLAUDE.md             # Claude-specific notes
+├── TASKS.md              # in-flight and backlog items
 ├── LICENSE               # project license
 ├── config.py             # loads and validates env vars (model, params, key, log level)
 ├── logger.py             # configures logging to stdout and logs/app.log
