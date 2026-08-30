@@ -27,7 +27,7 @@ MISTRAL_TEMPERATURE = float(os.getenv("MISTRAL_TEMPERATURE", "0.0"))
 MISTRAL_TOP_P = os.getenv("MISTRAL_TOP_P")  # None by default — not sent unless explicitly set
 if MISTRAL_TOP_P is not None:
     MISTRAL_TOP_P = float(MISTRAL_TOP_P)
-REQUEST_TIMEOUT = 30  # seconds
+REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "30"))  # seconds
 
 # --- Local Ollama ---
 # Base URL for the Ollama server. Default matches `ollama serve` with no config.
@@ -38,6 +38,13 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 # Controls console verbosity. The log file always captures DEBUG regardless of this setting.
 # Valid values: DEBUG, INFO, WARNING, ERROR
 LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+
+# Tracing is opt-in so importing the library never attempts a network connection.
+# The endpoint uses OTLP over gRPC, matching the exporter in llm_client.py.
+OTEL_ENABLED = os.getenv("OTEL_ENABLED", "false").lower() in {"1", "true", "yes"}
+OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv(
+    "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317"
+)
 
 # --- Retry ---
 # Per Mistral docs, retry 429 (rate limit) and 5xx (server) errors with exponential backoff.
@@ -52,8 +59,19 @@ RETRY_MAX_DELAY = float(os.getenv("RETRY_MAX_DELAY", "60.0"))    # cap on any si
 # Generate a strong value with: python -c "import secrets; print(secrets.token_hex(32))"
 API_KEY = os.getenv("API_KEY")
 
-if LLM_BACKEND == "api" and not MISTRAL_API_KEY:
-    raise EnvironmentError(
-        "MISTRAL_API_KEY is not set. Copy .env.example to .env and fill in your key.\n"
-        "To run locally without an API key, set LLM_BACKEND=local in your .env."
-    )
+
+def validate_runtime_config() -> None:
+    """Validate settings only when a model client is actually requested.
+
+    Deferring validation keeps imports, unit tests, and static tooling usable
+    without a cloud API key while preserving a clear error at runtime.
+    """
+    if LLM_BACKEND not in {"api", "local"}:
+        raise EnvironmentError("LLM_BACKEND must be either 'api' or 'local'.")
+
+    placeholder_keys = {None, "", "your_mistral_api_key_here"}
+    if LLM_BACKEND == "api" and MISTRAL_API_KEY in placeholder_keys:
+        raise EnvironmentError(
+            "MISTRAL_API_KEY is not set. Copy .env.example to .env and fill in your key.\n"
+            "To run locally without an API key, set LLM_BACKEND=local in your .env."
+        )

@@ -1,13 +1,13 @@
 #!/usr/bin/env fish
 
-# start_streamlit.fish — Launch Streamlit demo with full OpenTelemetry observability
+# start_streamlit.fish — Launch Streamlit with optional local OpenTelemetry traces
 # 
 # This script starts:
 # 1. Jaeger for distributed tracing
 # 2. Streamlit web interface
 # 3. Provides instructions for viewing traces
 
-echo "🚀 Starting Streamlit Demo with Full Observability..."
+echo "🚀 Starting Streamlit Demo with Optional Local Tracing..."
 echo ""
 
 # Check if Docker is running
@@ -16,13 +16,15 @@ if command -v docker >/dev/null 2>&1
     set docker_available 1
 else
     echo "⚠️  Docker not found. Continuing without Jaeger tracing."
-    echo "   Install Docker for full observability: https://www.docker.com/get-started"
+    echo "   Install Docker for optional local tracing: https://www.docker.com/get-started"
     echo ""
     set docker_available 0
 end
 
 # Start Jaeger for tracing if Docker is available
 if test $docker_available -eq 1
+    set -x OTEL_ENABLED true
+    set -x OTEL_EXPORTER_OTLP_ENDPOINT http://localhost:4317
     echo "🔍 Starting Jaeger for OpenTelemetry tracing..."
 
     # Check if Jaeger is already running
@@ -56,6 +58,7 @@ if test $docker_available -eq 1
     end
     set jaeger_url "http://localhost:16686"
 else
+    set -x OTEL_ENABLED false
     set jaeger_url "N/A (Docker not available)"
 end
 
@@ -78,7 +81,7 @@ if test $docker_available -eq 1
     echo "   2. Run: docker stop mistral-jaeger && docker rm mistral-jaeger"
 else
     echo "📊 Tracing is disabled (Docker not available)"
-    echo "   Install Docker to enable full observability"
+    echo "   Install Docker to enable optional local tracing"
     echo ""
     echo "💬 To stop when done:"
     echo "   Press Ctrl+C in this terminal to stop Streamlit"

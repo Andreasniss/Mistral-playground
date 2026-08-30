@@ -45,4 +45,4 @@ In-flight and backlog items for this repo.
 - [x] Function / tool calling with Open-Meteo weather demo
 - [x] Streaming tokens demo (`demo_stream.py`)
 - [x] Model comparison demo (`demo_compare.py`)
-- [x] Tests with mocks — 12 test cases, no API key needed
+- [x] Tests with mocks — no API key or model call needed

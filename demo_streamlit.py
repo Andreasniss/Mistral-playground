@@ -18,24 +18,19 @@ import config
 # OpenTelemetry instrumentation for Streamlit UI events
 try:
     from opentelemetry import trace
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
     from opentelemetry.instrumentation.streamlit import StreamlitInstrumentor
-    
-    # Set up OpenTelemetry tracing
-    trace.set_tracer_provider(TracerProvider())
-    otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
-    trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter))
-    
-    # Instrument Streamlit
-    StreamlitInstrumentor().instrument()
-    
-    # Get tracer for custom spans
+
+    # llm_client owns provider setup. Instrument the UI only when telemetry is
+    # explicitly enabled, avoiding a competing global tracer provider.
+    if config.OTEL_ENABLED:
+        StreamlitInstrumentor().instrument()
+
     tracer = trace.get_tracer(__name__)
-    
+
     def trace_streamlit_event(event_name: str, attributes: dict = None):
-        """Create a custom span for Streamlit UI events."""
+        """Create a metadata-only span for Streamlit UI events."""
+        if not config.OTEL_ENABLED:
+            return
         with tracer.start_as_current_span(event_name) as span:
             if attributes:
                 for key, value in attributes.items():
@@ -183,7 +178,7 @@ def get_hr_policy_info(query: str) -> str:
     """Get HR policy information using RAG approach."""
     # Trace the RAG operation
     trace_streamlit_event("rag_hr_policy_query", {
-        "query": query
+        "query_chars": len(query)
     })
     
     hr_policy_content = load_hr_policy()
@@ -194,7 +189,7 @@ def get_hr_policy_info(query: str) -> str:
     
     # Trace the RAG result
     trace_streamlit_event("rag_hr_policy_result", {
-        "query": query,
+        "query_chars": len(query),
         "result_length": len(result),
         "has_results": "Yes" if "Relevant HR Policy Information" in result else "No"
     })
@@ -325,7 +320,7 @@ def main():
                 if any(keyword in prompt.lower() for keyword in weather_keywords):
                     # Trace weather tool usage
                     trace_streamlit_event("weather_tool_invoked", {
-                        "user_query": prompt
+                        "input_chars": len(prompt)
                     })
                     # Use tool calling for weather questions
                     response = chat_with_tools(
@@ -337,7 +332,7 @@ def main():
                 elif any(keyword in prompt.lower() for keyword in hr_keywords):
                     # Trace HR RAG tool usage
                     trace_streamlit_event("hr_rag_tool_invoked", {
-                        "user_query": prompt
+                        "input_chars": len(prompt)
                     })
                     # Use tool calling for HR questions
                     response = chat_with_tools(
@@ -349,7 +344,7 @@ def main():
                 else:
                     # Trace regular chat usage
                     trace_streamlit_event("regular_chat_invoked", {
-                        "user_query": prompt
+                        "input_chars": len(prompt)
                     })
                     # Use regular chat for other questions
                     response = chat(prompt, system_message=system_message)
@@ -367,7 +362,6 @@ def main():
                 st.error(f"An error occurred: {str(e)}")
                 # Trace error
                 trace_streamlit_event("response_error", {
-                    "error_message": str(e),
                     "error_type": type(e).__name__
                 })
 

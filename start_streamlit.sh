@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# start_streamlit.sh — Launch Streamlit demo with full OpenTelemetry observability
+# start_streamlit.sh — Launch Streamlit with optional local OpenTelemetry traces
 # 
 # This script starts:
 # 1. Jaeger for distributed tracing
 # 2. Streamlit web interface
 # 3. Provides instructions for viewing traces
 
-echo "🚀 Starting Streamlit Demo with Full Observability..."
+echo "🚀 Starting Streamlit Demo with Optional Local Tracing..."
 echo ""
 
 # Check if Docker is running
@@ -16,6 +16,9 @@ if ! command -v docker &> /dev/null; then
     echo "   https://www.docker.com/get-started"
     exit 1
 fi
+
+export OTEL_ENABLED=true
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 
 # Start Jaeger for tracing
 echo "🔍 Starting Jaeger for OpenTelemetry tracing..."

@@ -1,6 +1,10 @@
 # Mistral Playground
 
-A structured Python playground for testing the Mistral API, designed for developers and researchers who want to experiment with LLM integrations while following best practices.
+[![CI](https://github.com/Andreasniss/Mistral-playground/actions/workflows/ci.yml/badge.svg)](https://github.com/Andreasniss/Mistral-playground/actions/workflows/ci.yml)
+
+A Python learning lab for experimenting with Mistral and local Ollama models. It demonstrates provider switching, retries, tool-call loops, FastAPI and Streamlit interfaces, mocked tests, and opt-in OpenTelemetry tracing.
+
+This repository is a reference playground, not a production service or an evaluation benchmark. Logs and traces record operational metadata by default, not prompt, response, tool-argument, or tool-result content.
 
 ---
 
@@ -53,7 +57,7 @@ To run the Streamlit demo:
 .venv/bin/streamlit run demo_streamlit.py
 ```
 
-For full observability with Jaeger tracing, use the provided startup scripts:
+For optional local traces with Jaeger, use the provided startup scripts:
 
 ```bash
 # For fish shell users
@@ -169,16 +173,16 @@ What is logged per call:
 
 | Event | Level | Fields |
 |---|---|---|
-| Request | INFO | trace ID, model, max_tokens, temperature, user message (truncated) |
-| Response | INFO | trace ID, latency (s), prompt_tokens, completion_tokens, total_tokens |
-| Response content | DEBUG | trace ID, content (truncated) |
-| API error | ERROR | trace ID, latency, exception message |
+| Request | INFO | trace ID, model, max tokens, sampling settings, input length |
+| Response | INFO | trace ID, latency, token counts, output length |
+| Tool call | INFO | tool name, argument-key names, result length |
+| API error | ERROR | trace ID, latency, exception type |
 
 Example log output:
 
 ```
-2024-01-15 10:23:41 [INFO] llm_client — [a3f9c21b] Request — model=mistral-large-latest max_tokens=1024 temperature=0.0 user_message='Explain what Mistral AI is...'
-2024-01-15 10:23:43 [INFO] llm_client — [a3f9c21b] Response — latency=1.84s prompt_tokens=42 completion_tokens=87 total_tokens=129
+2024-01-15 10:23:41 [INFO] llm_client — [a3f9c21b] Request — model=mistral-large-latest max_tokens=1024 temperature=0.0 top_p=None input_chars=29
+2024-01-15 10:23:43 [INFO] llm_client — [a3f9c21b] Response — latency=1.84s prompt_tokens=42 completion_tokens=87 total_tokens=129 output_chars=412
 ```
 
 ### 8. Retry with exponential backoff — `llm_client.py`
@@ -206,7 +210,7 @@ Example log when a 429 with a `Retry-After` header is hit and recovered:
 
 ### 9. Tests — `tests/test_main.py`
 
-Tests use `unittest.mock` to patch `get_client()`, so they run without an API key and without making real network calls. This makes the test suite fast and safe to run in CI. Twelve tests cover:
+Tests use `unittest.mock` to patch `get_client()`, so they run without an API key and without making real model calls. This makes the test suite fast and safe to run in CI. Tests cover:
 
 - `chat()` sends the correct user message
 - `chat()` includes a system message when provided
@@ -531,14 +535,14 @@ To set up tracing with Jaeger:
 
 ```bash
 pip install opentelemetry-sdk opentelemetry-exporter-otlp
-docker run -d --name jaeger -e COLLECTOR_OTLP_ENABLED=true -p 16686:16686 -p 4318:4318 jaegertracing/all-in-one:latest
+docker run -d --name jaeger -e COLLECTOR_OTLP_ENABLED=true -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one:latest
 ```
 
 Then, view traces at `http://localhost:16686`.
 
 #### Instrumentation
 
-- **`chat()`**: Traces API calls with attributes like `model`, `user_message`, and latency.
+- **`chat()`**: Traces the full model call with metadata such as model, character counts, token counts, and latency. It does not export prompt or response content.
 - **`chat_with_tools()`**: Traces tool interactions, including tool names and arguments.
 
 #### Example Trace
@@ -553,7 +557,7 @@ Span: mistral_chat
 
 #### Configuration
 
-The OpenTelemetry exporter is configured in `llm_client.py` to send traces to `http://localhost:4318/v1/traces`. If no collector is running, traces will still be generated but not exported (you'll see connection errors in the logs, which are harmless). Update the endpoint if your collector runs elsewhere.
+OpenTelemetry export is disabled by default. Set `OTEL_ENABLED=true` to send OTLP/gRPC traces to `http://localhost:4317`, or override `OTEL_EXPORTER_OTLP_ENDPOINT` for another collector. The startup scripts set both values for the local Jaeger demo.
 
 To disable tracing, comment out the OpenTelemetry initialization in `llm_client.py`.
 
