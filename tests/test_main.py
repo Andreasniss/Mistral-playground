@@ -195,6 +195,140 @@ def test_chat_logs_error_on_failure(caplog):
         assert any("failed" in r.message for r in caplog.records)
 
 
+def test_missing_cloud_key_fails_only_when_client_is_requested(monkeypatch):
+    import config
+    import llm_client
+
+    monkeypatch.setattr(config, "LLM_BACKEND", "api")
+    monkeypatch.setattr(config, "MISTRAL_API_KEY", None)
+    monkeypatch.setattr(llm_client, "_client", None)
+
+    with pytest.raises(EnvironmentError, match="MISTRAL_API_KEY is not set"):
+        llm_client.get_client()
+
+
+def test_modules_import_without_cloud_key():
+    import os
+    import subprocess
+    import sys
+
+    clean_env = os.environ.copy()
+    clean_env.pop("MISTRAL_API_KEY", None)
+    clean_env["LLM_BACKEND"] = "api"
+    clean_env["OTEL_ENABLED"] = "false"
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import config; import llm_client"],
+        env=clean_env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_disabled_telemetry_does_not_create_exporter(monkeypatch):
+    import config
+    import llm_client
+
+    monkeypatch.setattr(config, "OTEL_ENABLED", False)
+    with patch("llm_client.OTLPSpanExporter") as mock_exporter:
+        assert llm_client._configure_tracing() is False
+    mock_exporter.assert_not_called()
+
+
+def test_chat_logs_exclude_prompt_and_response_content(caplog):
+    import logging
+
+    secret_prompt = "PROMPT_SECRET_7e91"
+    secret_response = "RESPONSE_SECRET_3a42"
+    with patch("llm_client.get_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_client.chat.complete.return_value = _make_response(secret_response)
+        mock_get_client.return_value = mock_client
+
+        from llm_client import chat
+        with caplog.at_level(logging.DEBUG, logger="llm_client"):
+            assert chat(secret_prompt) == secret_response
+
+    captured = "\n".join(record.getMessage() for record in caplog.records)
+    assert secret_prompt not in captured
+    assert secret_response not in captured
+
+
+def test_chat_span_encloses_provider_call():
+    events = []
+
+    class FakeSpan:
+        def __enter__(self):
+            events.append("span_enter")
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            events.append("span_exit")
+
+        def set_attribute(self, key, value):
+            pass
+
+    class FakeTracer:
+        def start_as_current_span(self, name, **kwargs):
+            return FakeSpan()
+
+    with patch("llm_client.trace.get_tracer", return_value=FakeTracer()), \
+         patch("llm_client.get_client") as mock_get_client:
+        mock_client = MagicMock()
+
+        def provider_call(**kwargs):
+            events.append("provider_call")
+            return _make_response("OK")
+
+        mock_client.chat.complete.side_effect = provider_call
+        mock_get_client.return_value = mock_client
+
+        from llm_client import chat
+        assert chat("Hello") == "OK"
+
+    assert events == ["span_enter", "provider_call", "span_exit"]
+
+
+def test_tool_logs_exclude_argument_and_result_values(caplog):
+    import logging
+
+    secret_prompt = "TOOL_PROMPT_SECRET_4b11"
+    secret_argument = "TOOL_ARGUMENT_SECRET_f125"
+    secret_result = "TOOL_RESULT_SECRET_8d30"
+
+    tool_call = MagicMock()
+    tool_call.id = "call-1"
+    tool_call.function.name = "lookup"
+    tool_call.function.arguments = '{"query": "' + secret_argument + '"}'
+
+    first_response = _make_response("")
+    first_response.choices[0].finish_reason = "tool_calls"
+    first_response.choices[0].message.tool_calls = [tool_call]
+    second_response = _make_response("done")
+    second_response.choices[0].finish_reason = "stop"
+
+    with patch("llm_client.get_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_client.chat.complete.side_effect = [first_response, second_response]
+        mock_get_client.return_value = mock_client
+
+        from llm_client import chat_with_tools
+        with caplog.at_level(logging.DEBUG, logger="llm_client"):
+            result = chat_with_tools(
+                secret_prompt,
+                tools=[{"type": "function", "function": {"name": "lookup"}}],
+                tool_executor=lambda name, args: secret_result,
+            )
+
+    assert result == "done"
+    captured = "\n".join(record.getMessage() for record in caplog.records)
+    assert secret_prompt not in captured
+    assert secret_argument not in captured
+    assert secret_result not in captured
+
+
 # --- prompts ---
 
 def test_load_prompt_returns_content(tmp_path, monkeypatch):

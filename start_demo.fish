@@ -16,7 +16,7 @@ if not docker ps | grep -q "jaeger"
     docker run -d --name jaeger \
         -e COLLECTOR_OTLP_ENABLED=true \
         -p 16686:16686 \
-        -p 4318:4318 \
+        -p 4317:4317 \
         jaegertracing/all-in-one:latest
     if test $status -ne 0
         echo "❌ Failed to start Jaeger. Exiting."
@@ -26,6 +26,9 @@ if not docker ps | grep -q "jaeger"
 else
     echo "✅ Jaeger is already running."
 end
+
+set -x OTEL_ENABLED true
+set -x OTEL_EXPORTER_OTLP_ENDPOINT http://localhost:4317
 
 # Step 3: Run the demos
 echo "🎤 Starting demo_chat.py (interactive chat)..."

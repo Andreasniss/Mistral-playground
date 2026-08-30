@@ -18,7 +18,7 @@ Task state lives in `TASKS.md`. Read it before starting work.
 
 ## What This Repo Is
 
-A structured Python playground for the Mistral AI API that demonstrates production-grade patterns: centralised config, dual-handler logging, a singleton API client, prompt file management, retry with exponential backoff, and fully mocked unit tests.
+A structured Python learning lab for the Mistral AI API that demonstrates production-oriented patterns: centralised config, metadata-only logging and tracing, a singleton API client, prompt file management, retry with exponential backoff, and mocked unit tests. It is not a production service or an evaluation benchmark.
 
 It is intentionally minimal — a foundation to extend, not a finished product.
 

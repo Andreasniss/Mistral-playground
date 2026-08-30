@@ -15,11 +15,31 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-# Initialize OpenTelemetry tracing with a service name
-resource = Resource.create({"service.name": "mistral-playground"})
-trace.set_tracer_provider(TracerProvider(resource=resource))
-otlp_exporter = OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)
-trace.get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter))
+
+def _configure_tracing() -> bool:
+    """Configure OTLP tracing when explicitly enabled.
+
+    Tracing is disabled by default so imports and tests do not open a network
+    connection. Prompt and response content are intentionally never exported.
+    """
+    if not config.OTEL_ENABLED:
+        return False
+
+    resource = Resource.create({"service.name": "mistral-playground"})
+    provider = TracerProvider(resource=resource)
+    provider.add_span_processor(
+        BatchSpanProcessor(
+            OTLPSpanExporter(
+                endpoint=config.OTEL_EXPORTER_OTLP_ENDPOINT,
+                insecure=config.OTEL_EXPORTER_OTLP_ENDPOINT.startswith("http://"),
+            )
+        )
+    )
+    trace.set_tracer_provider(provider)
+    return True
+
+
+_configure_tracing()
 
 logger = get_logger("llm_client")
 
@@ -46,9 +66,14 @@ def get_client():
     """
     global _client
     if _client is None:
+        config.validate_runtime_config()
         if config.LLM_BACKEND == "local":
-            _client = OpenAI(base_url=config.OLLAMA_BASE_URL, api_key="ollama")
-            logger.info("Using local Ollama backend at %s", config.OLLAMA_BASE_URL)
+            _client = OpenAI(
+                base_url=config.OLLAMA_BASE_URL,
+                api_key="ollama",
+                timeout=config.REQUEST_TIMEOUT,
+            )
+            logger.info("Using local Ollama backend")
         else:
             _client = Mistral(api_key=config.MISTRAL_API_KEY)
             logger.info("Using Mistral cloud API backend")
@@ -124,9 +149,10 @@ def _call_with_retry(fn, trace_id: str):
                 )
 
             logger.warning(
-                "[%s] Retryable error (%s), attempt %d/%d — retrying in %.1fs%s",
+                "[%s] Retryable error_type=%s status=%s, attempt %d/%d — retrying in %.1fs%s",
                 trace_id,
-                exc,
+                type(exc).__name__,
+                getattr(exc, "status_code", "unknown"),
                 attempt + 1,
                 config.RETRY_MAX_ATTEMPTS,
                 delay,
@@ -166,16 +192,6 @@ def chat(
     trace_id = uuid.uuid4().hex[:8]
     resolved_model = model or config.MISTRAL_MODEL
     resolved_top_p = top_p if top_p is not None else config.MISTRAL_TOP_P
-    
-    # OpenTelemetry tracing
-    tracer = trace.get_tracer(__name__)
-    with tracer.start_as_current_span("mistral_chat") as span:
-        span.set_attribute("model", resolved_model)
-        span.set_attribute("user_message", user_message)
-        span.set_attribute("max_tokens", max_tokens or config.MISTRAL_MAX_TOKENS)
-        span.set_attribute("temperature", temperature if temperature is not None else config.MISTRAL_TEMPERATURE)
-        if resolved_top_p is not None:
-            span.set_attribute("top_p", resolved_top_p)
 
     # Build the messages array. System message must come first if present.
     # Valid roles: "system", "user", "assistant", "tool"
@@ -185,64 +201,96 @@ def chat(
         messages.append({"role": "system", "content": system_message})
     messages.append({"role": "user", "content": user_message})
 
-    resolved_top_p = top_p if top_p is not None else config.MISTRAL_TOP_P
-
     logger.info(
-        "[%s] Request — model=%s max_tokens=%s temperature=%s top_p=%s user_message=%.80r",
+        "[%s] Request — model=%s max_tokens=%s temperature=%s top_p=%s input_chars=%d",
         trace_id,
         resolved_model,
         max_tokens or config.MISTRAL_MAX_TOKENS,
         temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
         resolved_top_p,
-        user_message,
+        len(user_message),
     )
 
-    start = time.perf_counter()
-    try:
-        if config.LLM_BACKEND == "local":
-            # Ollama exposes an OpenAI-compatible endpoint: chat.completions.create()
-            response = _call_with_retry(
-                lambda: get_client().chat.completions.create(
-                    model=resolved_model,
-                    messages=messages,
-                    max_tokens=max_tokens or config.MISTRAL_MAX_TOKENS,
-                    temperature=temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
-                    **({"top_p": resolved_top_p} if resolved_top_p is not None else {}),
-                ),
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span(
+        "mistral_chat",
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
+        span.set_attribute("model", resolved_model)
+        span.set_attribute("input_chars", len(user_message))
+        span.set_attribute("max_tokens", max_tokens or config.MISTRAL_MAX_TOKENS)
+        span.set_attribute(
+            "temperature",
+            temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
+        )
+        if resolved_top_p is not None:
+            span.set_attribute("top_p", resolved_top_p)
+
+        start = time.perf_counter()
+        try:
+            if config.LLM_BACKEND == "local":
+                response = _call_with_retry(
+                    lambda: get_client().chat.completions.create(
+                        model=resolved_model,
+                        messages=messages,
+                        max_tokens=max_tokens or config.MISTRAL_MAX_TOKENS,
+                        temperature=(
+                            temperature
+                            if temperature is not None
+                            else config.MISTRAL_TEMPERATURE
+                        ),
+                        **({"top_p": resolved_top_p} if resolved_top_p is not None else {}),
+                    ),
+                    trace_id,
+                )
+            else:
+                response = _call_with_retry(
+                    lambda: get_client().chat.complete(
+                        model=resolved_model,
+                        messages=messages,
+                        max_tokens=max_tokens or config.MISTRAL_MAX_TOKENS,
+                        temperature=(
+                            temperature
+                            if temperature is not None
+                            else config.MISTRAL_TEMPERATURE
+                        ),
+                        **({"top_p": resolved_top_p} if resolved_top_p is not None else {}),
+                    ),
+                    trace_id,
+                )
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            span.set_attribute("error.type", type(exc).__name__)
+            span.set_attribute("latency_seconds", elapsed)
+            logger.error(
+                "[%s] Request failed after %.2fs — error_type=%s",
                 trace_id,
+                elapsed,
+                type(exc).__name__,
             )
-        else:
-            response = _call_with_retry(
-                lambda: get_client().chat.complete(
-                    model=resolved_model,
-                    messages=messages,
-                    max_tokens=max_tokens or config.MISTRAL_MAX_TOKENS,
-                    temperature=temperature if temperature is not None else config.MISTRAL_TEMPERATURE,
-                    **({"top_p": resolved_top_p} if resolved_top_p is not None else {}),
-                ),
-                trace_id,
-            )
-    except Exception as exc:
-        logger.error("[%s] Request failed after %.2fs — %s", trace_id, time.perf_counter() - start, exc)
-        raise
+            raise
 
-    elapsed = time.perf_counter() - start
-    # The usage object contains prompt_tokens, completion_tokens, total_tokens —
-    # the primary signal for tracking cost and latency, as recommended by Mistral docs.
-    usage = response.usage
-    content = response.choices[0].message.content
+        elapsed = time.perf_counter() - start
+        usage = response.usage
+        content = response.choices[0].message.content
+        span.set_attribute("latency_seconds", elapsed)
+        span.set_attribute("prompt_tokens", usage.prompt_tokens)
+        span.set_attribute("completion_tokens", usage.completion_tokens)
+        span.set_attribute("total_tokens", usage.total_tokens)
+        span.set_attribute("output_chars", len(content or ""))
 
-    logger.info(
-        "[%s] Response — latency=%.2fs prompt_tokens=%s completion_tokens=%s total_tokens=%s",
-        trace_id,
-        elapsed,
-        usage.prompt_tokens,
-        usage.completion_tokens,
-        usage.total_tokens,
-    )
-    logger.debug("[%s] Response content: %.120r", trace_id, content)
+        logger.info(
+            "[%s] Response — latency=%.2fs prompt_tokens=%s completion_tokens=%s total_tokens=%s output_chars=%d",
+            trace_id,
+            elapsed,
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.total_tokens,
+            len(content or ""),
+        )
 
-    return content
+        return content
 
 
 def chat_with_tools(
@@ -281,20 +329,7 @@ def chat_with_tools(
     resolved_temp = temperature if temperature is not None else config.MISTRAL_TEMPERATURE
     resolved_max_tokens = max_tokens or config.MISTRAL_MAX_TOKENS
 
-    # OpenTelemetry tracing
-    tracer = trace.get_tracer(__name__)
-    with tracer.start_as_current_span("mistral_chat_with_tools") as span:
-        span.set_attribute("user_message", user_message)
-        span.set_attribute("num_tools", len(tools))
-        span.set_attribute("model", resolved_model)
-        span.set_attribute("max_tokens", resolved_max_tokens)
-        span.set_attribute("temperature", resolved_temp)
-        if resolved_top_p is not None:
-            span.set_attribute("top_p", resolved_top_p)
-        trace_id = uuid.uuid4().hex[:8]
-    resolved_top_p = top_p if top_p is not None else config.MISTRAL_TOP_P
-    resolved_temp = temperature if temperature is not None else config.MISTRAL_TEMPERATURE
-    resolved_max_tokens = max_tokens or config.MISTRAL_MAX_TOKENS
+    trace_id = uuid.uuid4().hex[:8]
 
     messages = []
     if system_message:
@@ -302,11 +337,11 @@ def chat_with_tools(
     messages.append({"role": "user", "content": user_message})
 
     logger.info(
-        "[%s] Tool-call request — model=%s tools=%s user_message=%.80r",
+        "[%s] Tool-call request — model=%s tools=%s input_chars=%d",
         trace_id,
         resolved_model,
         [t["function"]["name"] for t in tools],
-        user_message,
+        len(user_message),
     )
 
     extra = {"top_p": resolved_top_p} if resolved_top_p is not None else {}
@@ -330,59 +365,100 @@ def chat_with_tools(
             **extra,
         )
 
-    start = time.perf_counter()
-    try:
-        response = _call_with_retry(lambda: _call(messages), trace_id)
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span(
+        "mistral_chat_with_tools",
+        record_exception=False,
+        set_status_on_exception=False,
+    ) as span:
+        span.set_attribute("input_chars", len(user_message))
+        span.set_attribute("num_tools", len(tools))
+        span.set_attribute("model", resolved_model)
+        span.set_attribute("max_tokens", resolved_max_tokens)
+        span.set_attribute("temperature", resolved_temp)
+        if resolved_top_p is not None:
+            span.set_attribute("top_p", resolved_top_p)
 
-        # Tool-call loop — the model may request multiple rounds of tool calls.
-        while response.choices[0].finish_reason == "tool_calls":
-            tool_calls = response.choices[0].message.tool_calls
-            logger.info("[%s] Model requested %d tool call(s)", trace_id, len(tool_calls))
-
-            # Append the assistant turn (with tool_calls) to the history.
-            messages.append({
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                    }
-                    for tc in tool_calls
-                ],
-            })
-
-            # Execute each requested tool and append its result.
-            for tc in tool_calls:
-                args = json.loads(tc.function.arguments)
-                logger.info("[%s] Calling tool %r with args %s", trace_id, tc.function.name, args)
-                result = tool_executor(tc.function.name, args)
-                logger.info("[%s] Tool %r returned: %.120r", trace_id, tc.function.name, result)
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "name": tc.function.name,
-                    "content": result,
-                })
-
+        start = time.perf_counter()
+        try:
             response = _call_with_retry(lambda: _call(messages), trace_id)
 
-    except Exception as exc:
-        logger.error("[%s] Tool-call request failed after %.2fs — %s", trace_id, time.perf_counter() - start, exc)
-        raise
+            # Tool-call loop — the model may request multiple rounds of tool calls.
+            while response.choices[0].finish_reason == "tool_calls":
+                tool_calls = response.choices[0].message.tool_calls
+                logger.info("[%s] Model requested %d tool call(s)", trace_id, len(tool_calls))
 
-    elapsed = time.perf_counter() - start
-    usage = response.usage
-    content = response.choices[0].message.content
+                # Append the assistant turn (with tool_calls) to the history.
+                messages.append({
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        }
+                        for tc in tool_calls
+                    ],
+                })
 
-    logger.info(
-        "[%s] Tool-call response — latency=%.2fs prompt_tokens=%s completion_tokens=%s total_tokens=%s",
-        trace_id,
-        elapsed,
-        usage.prompt_tokens,
-        usage.completion_tokens,
-        usage.total_tokens,
-    )
+                # Execute each requested tool and append its result.
+                for tc in tool_calls:
+                    args = json.loads(tc.function.arguments)
+                    logger.info(
+                        "[%s] Calling tool %r with argument_keys=%s",
+                        trace_id,
+                        tc.function.name,
+                        sorted(args),
+                    )
+                    result = tool_executor(tc.function.name, args)
+                    logger.info(
+                        "[%s] Tool %r returned result_chars=%d",
+                        trace_id,
+                        tc.function.name,
+                        len(str(result)),
+                    )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": tc.function.name,
+                        "content": result,
+                    })
 
-    return content
+                response = _call_with_retry(lambda: _call(messages), trace_id)
+
+        except Exception as exc:
+            elapsed = time.perf_counter() - start
+            span.set_attribute("error.type", type(exc).__name__)
+            span.set_attribute("latency_seconds", elapsed)
+            logger.error(
+                "[%s] Tool-call request failed after %.2fs — error_type=%s",
+                trace_id,
+                elapsed,
+                type(exc).__name__,
+            )
+            raise
+
+        elapsed = time.perf_counter() - start
+        usage = response.usage
+        content = response.choices[0].message.content
+        span.set_attribute("latency_seconds", elapsed)
+        span.set_attribute("prompt_tokens", usage.prompt_tokens)
+        span.set_attribute("completion_tokens", usage.completion_tokens)
+        span.set_attribute("total_tokens", usage.total_tokens)
+        span.set_attribute("output_chars", len(content or ""))
+
+        logger.info(
+            "[%s] Tool-call response — latency=%.2fs prompt_tokens=%s completion_tokens=%s total_tokens=%s output_chars=%d",
+            trace_id,
+            elapsed,
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.total_tokens,
+            len(content or ""),
+        )
+
+        return content

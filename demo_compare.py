@@ -38,9 +38,13 @@ def run():
     tracer = trace.get_tracer(__name__)
     for model in MODELS:
         start = time.perf_counter()
-        with tracer.start_as_current_span(f"mistral_chat_{model}") as span:
+        with tracer.start_as_current_span(
+            f"mistral_chat_{model}",
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
             span.set_attribute("model", model)
-            span.set_attribute("user_message", PROMPT)
+            span.set_attribute("input_chars", len(PROMPT))
             if config.LLM_BACKEND == "local":
                 response = client.chat.completions.create(
                     model=model,
