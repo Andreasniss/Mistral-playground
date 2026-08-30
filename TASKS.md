@@ -34,6 +34,8 @@ In-flight and backlog items for this repo.
 
 ## Done
 
+- [x] Dependency security gate — export the locked runtime set and fail CI on known
+  vulnerabilities or incomplete dependency collection with `pip-audit`
 - [x] Portfolio hardening — reviewer-first Streamlit UI, credential-free preview,
   multi-turn history, explicit tool allow-list, synthetic-data labelling, versioned
   eval contract, locked dependencies, linting, interaction tests, security notes,

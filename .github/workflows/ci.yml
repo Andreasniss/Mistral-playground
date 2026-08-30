@@ -32,3 +32,7 @@ jobs:
         run: uv run pytest -q
       - name: Run deterministic evaluation contract
         run: uv run python -m evals.run_evals
+      - name: Audit locked runtime dependencies
+        run: |
+          uv export --locked --no-dev --no-hashes --output-file /tmp/audit-requirements.txt
+          uv run pip-audit --requirement /tmp/audit-requirements.txt --strict --progress-spinner off
