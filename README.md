@@ -21,7 +21,7 @@ credential-free tests, and a deterministic evaluation contract.
 | Resilience | Retry `429` and transient `5xx`, honor `Retry-After`, add jitter | `llm_client.py`, unit tests |
 | Privacy | Prompt, response, arguments, and results excluded from logs/spans | `llm_client.py`, privacy regression tests |
 | Observability | Opt-in OpenTelemetry with latency, usage, tool, and error metadata | `llm_client.py` |
-| Regression safety | Secret-free CI plus deterministic route/grounding evals | `.github/workflows/ci.yml`, `evals/` |
+| Regression safety | Secret-free CI, deterministic evals, locked dependency audit | `.github/workflows/ci.yml`, `evals/`, `uv.lock` |
 | Provider choice | Mistral cloud or local Ollama through one client boundary | `config.py`, `llm_client.py` |
 
 ## Try it in 60 seconds
@@ -96,6 +96,8 @@ Run the offline regression suite:
 ```bash
 python -m pytest -q
 python -m evals.run_evals
+uv export --locked --no-dev --no-hashes --output-file /tmp/audit-requirements.txt
+pip-audit --requirement /tmp/audit-requirements.txt --strict
 ```
 
 The versioned cases check deterministic boundaries around the model:

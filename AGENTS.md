@@ -57,6 +57,8 @@ uv sync --locked --dev
 uv run ruff check .
 uv run pytest -q
 uv run python -m evals.run_evals
+uv export --locked --no-dev --no-hashes --output-file /tmp/audit-requirements.txt
+uv run pip-audit --requirement /tmp/audit-requirements.txt --strict
 uv run streamlit run demo_streamlit.py
 ```
 
