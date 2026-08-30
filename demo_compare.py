@@ -5,11 +5,13 @@ Runs the same prompt through mistral-small-latest and mistral-large-latest,
 then prints both responses with token usage so you can compare quality vs cost.
 """
 import time
-from llm_client import get_client
-from prompts_loader import load_prompt
-import config
+
 # OpenTelemetry instrumentation
 from opentelemetry import trace
+
+import config
+from llm_client import get_client
+from prompts_loader import load_prompt
 
 MODELS = [
     "mistral-small-latest",

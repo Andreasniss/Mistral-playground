@@ -1,0 +1,44 @@
+[
+  {
+    "id": "policy-vacation",
+    "prompt": "How many vacation days do employees receive?",
+    "expected_route": "policy_retrieval",
+    "expected_tool": "search_policy",
+    "required_terms": ["25 paid vacation days", "Source"]
+  },
+  {
+    "id": "policy-remote",
+    "prompt": "Can employees work remotely?",
+    "expected_route": "policy_retrieval",
+    "expected_tool": "search_policy",
+    "required_terms": ["3 days per week", "Source"]
+  },
+  {
+    "id": "policy-training",
+    "prompt": "What is the annual training budget?",
+    "expected_route": "policy_retrieval",
+    "expected_tool": "search_policy",
+    "required_terms": ["€2,000", "Source"]
+  },
+  {
+    "id": "weather-live-data",
+    "prompt": "What is the weather in Munich?",
+    "expected_route": "weather_tool",
+    "expected_tool": "get_current_weather",
+    "required_terms": ["offline preview", "does not fabricate"]
+  },
+  {
+    "id": "weather-intent-jacket",
+    "prompt": "Do I need a jacket in Paris?",
+    "expected_route": "weather_tool",
+    "expected_tool": "get_current_weather",
+    "required_terms": ["Open-Meteo"]
+  },
+  {
+    "id": "unsupported-preview",
+    "prompt": "Write a launch announcement.",
+    "expected_route": "direct_answer",
+    "expected_tool": null,
+    "required_terms": ["credential-free preview", "connect Mistral/Ollama"]
+  }
+]

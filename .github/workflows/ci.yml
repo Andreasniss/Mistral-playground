@@ -13,17 +13,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          python-version: "3.12"
-          cache: pip
-      - name: Install dependencies
-        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+          version: "0.12.7"
+          enable-cache: true
+      - name: Install Python and locked dependencies
+        run: uv sync --locked --dev
       - name: Compile Python sources
-        run: python -m compileall -q .
+        run: uv run python -m compileall -q .
+      - name: Lint
+        run: uv run ruff check .
       - name: Run tests without credentials
         env:
           LLM_BACKEND: api
           MISTRAL_API_KEY: ""
           OTEL_ENABLED: "false"
-        run: python -m pytest -q
+        run: uv run pytest -q
+      - name: Run deterministic evaluation contract
+        run: uv run python -m evals.run_evals

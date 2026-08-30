@@ -8,10 +8,10 @@ Uses Open-Meteo (https://open-meteo.com/) — free, no API key required.
 Geocoding via Open-Meteo's geocoding API to resolve city names to lat/lon.
 """
 import json
-import urllib.request
 import urllib.parse
-from llm_client import chat_with_tools
+import urllib.request
 
+from llm_client import chat_with_tools
 
 # --- Tool definitions (sent to the model) ------------------------------------
 

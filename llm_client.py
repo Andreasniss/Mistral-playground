@@ -1,19 +1,21 @@
 import json
+import random
 import time
 import uuid
-import random
-from typing import Callable, List, Optional
+from collections.abc import Callable
+
 from mistralai.client import Mistral
 from openai import OpenAI
-import config
-from logger import get_logger
 
 # OpenTelemetry instrumentation
 from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+import config
+from logger import get_logger
 
 
 def _configure_tracing() -> bool:
@@ -90,7 +92,7 @@ def _is_retryable(exc: Exception) -> bool:
     return any(str(code) in str(exc) for code in _RETRYABLE_STATUS_CODES)
 
 
-def _get_retry_after(exc: Exception) -> Optional[float]:
+def _get_retry_after(exc: Exception) -> float | None:
     """Extract the Retry-After value (seconds) from the exception headers.
 
     The Mistral API sets a Retry-After header on 429 responses to tell clients
@@ -164,17 +166,19 @@ def _call_with_retry(fn, trace_id: str):
 
 def chat(
     user_message: str,
-    system_message: Optional[str] = None,
-    model: Optional[str] = None,
-    max_tokens: Optional[int] = None,
-    temperature: Optional[float] = None,
-    top_p: Optional[float] = None,
+    system_message: str | None = None,
+    conversation_history: list[dict] | None = None,
+    model: str | None = None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
 ) -> str:
     """Send a chat message to Mistral and return the assistant reply as a string.
 
     Args:
         user_message:   The user turn to send.
         system_message: Optional system prompt to prepend (sets assistant behaviour).
+        conversation_history: Prior user/assistant turns for multi-turn chat.
         model:          Override the model from config (e.g. "mistral-small-latest").
         max_tokens:     Override the token limit from config.
         temperature:    Override the sampling temperature from config (0.0–0.7).
@@ -199,6 +203,8 @@ def chat(
     messages = []
     if system_message:
         messages.append({"role": "system", "content": system_message})
+    if conversation_history:
+        messages.extend(conversation_history)
     messages.append({"role": "user", "content": user_message})
 
     logger.info(
@@ -295,13 +301,14 @@ def chat(
 
 def chat_with_tools(
     user_message: str,
-    tools: List[dict],
+    tools: list[dict],
     tool_executor: Callable[[str, dict], str],
-    system_message: Optional[str] = None,
-    model: Optional[str] = None,
-    max_tokens: Optional[int] = None,
-    temperature: Optional[float] = None,
-    top_p: Optional[float] = None,
+    system_message: str | None = None,
+    conversation_history: list[dict] | None = None,
+    model: str | None = None,
+    max_tokens: int | None = None,
+    temperature: float | None = None,
+    top_p: float | None = None,
 ) -> str:
     """Send a chat message with tool definitions and handle the full tool-call loop.
 
@@ -316,6 +323,7 @@ def chat_with_tools(
         tool_executor:  Callable(name, args) → str. Called for each tool the model
                         requests. Return value is sent back as the tool result.
         system_message: Optional system prompt.
+        conversation_history: Prior user/assistant turns for multi-turn chat.
         model:          Override the model from config.
         max_tokens:     Override the token limit from config.
         temperature:    Override the sampling temperature from config.
@@ -334,6 +342,8 @@ def chat_with_tools(
     messages = []
     if system_message:
         messages.append({"role": "system", "content": system_message})
+    if conversation_history:
+        messages.extend(conversation_history)
     messages.append({"role": "user", "content": user_message})
 
     logger.info(
@@ -383,8 +393,14 @@ def chat_with_tools(
         try:
             response = _call_with_retry(lambda: _call(messages), trace_id)
 
-            # Tool-call loop — the model may request multiple rounds of tool calls.
+            # Tool-call loop — bounded so a model cannot recurse indefinitely.
+            tool_rounds = 0
             while response.choices[0].finish_reason == "tool_calls":
+                tool_rounds += 1
+                if tool_rounds > config.MAX_TOOL_ROUNDS:
+                    raise RuntimeError(
+                        f"Tool-call limit exceeded ({config.MAX_TOOL_ROUNDS} rounds)"
+                    )
                 tool_calls = response.choices[0].message.tool_calls
                 logger.info("[%s] Model requested %d tool call(s)", trace_id, len(tool_calls))
 
@@ -408,6 +424,8 @@ def chat_with_tools(
                 # Execute each requested tool and append its result.
                 for tc in tool_calls:
                     args = json.loads(tc.function.arguments)
+                    if not isinstance(args, dict):
+                        raise ValueError("Tool arguments must decode to a JSON object")
                     logger.info(
                         "[%s] Calling tool %r with argument_keys=%s",
                         trace_id,

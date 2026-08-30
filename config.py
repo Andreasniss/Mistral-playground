@@ -1,6 +1,10 @@
-import os
 import logging
+import os
+from pathlib import Path
+
 from dotenv import load_dotenv
+
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 # Load variables from .env into the environment before reading them.
 # Has no effect if .env does not exist (e.g. in CI where vars are injected directly).
@@ -52,6 +56,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT = os.getenv(
 RETRY_MAX_ATTEMPTS = int(os.getenv("RETRY_MAX_ATTEMPTS", "3"))   # total attempts including the first
 RETRY_BASE_DELAY = float(os.getenv("RETRY_BASE_DELAY", "0.5"))   # seconds before first retry
 RETRY_MAX_DELAY = float(os.getenv("RETRY_MAX_DELAY", "60.0"))    # cap on any single delay
+MAX_TOOL_ROUNDS = int(os.getenv("MAX_TOOL_ROUNDS", "4"))
 
 # --- API server ---
 # Secret used to authenticate requests to the FastAPI server (X-API-Key header).
@@ -67,11 +72,11 @@ def validate_runtime_config() -> None:
     without a cloud API key while preserving a clear error at runtime.
     """
     if LLM_BACKEND not in {"api", "local"}:
-        raise EnvironmentError("LLM_BACKEND must be either 'api' or 'local'.")
+        raise OSError("LLM_BACKEND must be either 'api' or 'local'.")
 
     placeholder_keys = {None, "", "your_mistral_api_key_here"}
     if LLM_BACKEND == "api" and MISTRAL_API_KEY in placeholder_keys:
-        raise EnvironmentError(
+        raise OSError(
             "MISTRAL_API_KEY is not set. Copy .env.example to .env and fill in your key.\n"
             "To run locally without an API key, set LLM_BACKEND=local in your .env."
         )

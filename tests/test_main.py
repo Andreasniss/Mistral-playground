@@ -1,4 +1,5 @@
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 
@@ -47,6 +48,23 @@ def test_chat_includes_system_message():
         messages = mock_client.chat.complete.call_args.kwargs["messages"]
         assert messages[0]["role"] == "system"
         assert messages[0]["content"] == "You are helpful."
+
+
+def test_chat_includes_conversation_history_before_new_turn():
+    history = [
+        {"role": "user", "content": "My city is Munich."},
+        {"role": "assistant", "content": "Understood."},
+    ]
+    with patch("llm_client.get_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_client.chat.complete.return_value = _make_response("Munich")
+        mock_get_client.return_value = mock_client
+
+        from llm_client import chat
+        chat("Which city did I mention?", conversation_history=history)
+
+        messages = mock_client.chat.complete.call_args.kwargs["messages"]
+        assert messages == history + [{"role": "user", "content": "Which city did I mention?"}]
 
 
 # --- retry logic ---
@@ -327,6 +345,32 @@ def test_tool_logs_exclude_argument_and_result_values(caplog):
     assert secret_prompt not in captured
     assert secret_argument not in captured
     assert secret_result not in captured
+
+
+def test_tool_loop_is_bounded(monkeypatch):
+    tool_call = MagicMock()
+    tool_call.id = "call-1"
+    tool_call.function.name = "lookup"
+    tool_call.function.arguments = '{"query": "safe"}'
+
+    looping_response = _make_response("")
+    looping_response.choices[0].finish_reason = "tool_calls"
+    looping_response.choices[0].message.tool_calls = [tool_call]
+
+    import config
+    monkeypatch.setattr(config, "MAX_TOOL_ROUNDS", 1)
+    with patch("llm_client.get_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_client.chat.complete.return_value = looping_response
+        mock_get_client.return_value = mock_client
+
+        from llm_client import chat_with_tools
+        with pytest.raises(RuntimeError, match="Tool-call limit exceeded"):
+            chat_with_tools(
+                "Loop forever",
+                tools=[{"type": "function", "function": {"name": "lookup"}}],
+                tool_executor=lambda name, args: "result",
+            )
 
 
 # --- prompts ---

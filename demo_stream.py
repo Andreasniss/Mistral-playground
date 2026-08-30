@@ -4,9 +4,9 @@ demo_stream.py — streaming response demo
 Shows tokens printing in real time instead of waiting for the full reply.
 The model used is mistral-small-latest (faster/cheaper) to keep latency low.
 """
+import config
 from llm_client import get_client
 from prompts_loader import load_prompt
-import config
 
 PROMPT = "Write a short poem about the history of artificial intelligence."
 
