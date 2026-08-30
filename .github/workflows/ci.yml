@@ -26,4 +26,4 @@ jobs:
           LLM_BACKEND: api
           MISTRAL_API_KEY: ""
           OTEL_ENABLED: "false"
-        run: pytest -q
+        run: python -m pytest -q
