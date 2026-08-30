@@ -34,6 +34,10 @@ In-flight and backlog items for this repo.
 
 ## Done
 
+- [x] Portfolio hardening — reviewer-first Streamlit UI, credential-free preview,
+  multi-turn history, explicit tool allow-list, synthetic-data labelling, versioned
+  eval contract, locked dependencies, linting, interaction tests, security notes,
+  and concise evidence-led README
 - [x] Structured JSON output demo — `demo_structured.py` (Pydantic + `response_format`)
 - [x] `MISTRAL_MODEL` in `.env.example` — already present
 - [x] Streamlit web demo with weather tool integration

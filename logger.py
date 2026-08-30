@@ -1,6 +1,7 @@
 import logging
 import sys
 from pathlib import Path
+
 import config
 
 # logs/ sits next to this file and is created at import time if it doesn't exist.

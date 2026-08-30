@@ -1,4 +1,6 @@
-# Mistrag HR Policy - Employee Benefits
+# Acme Employee Policy (Fictional Demo Data)
+
+This document is synthetic and exists only to demonstrate grounded retrieval.
 
 ## Vacation and Leave Policy
 
@@ -51,8 +53,3 @@ Mistrag observes the following 10 public holidays per year:
 - Dress code: Business casual
 - Expense reporting: Monthly deadline on the 5th of each month
 - Travel policy: Economy class for domestic, business class for international >6 hours
-
-## Contact Information
-- HR Department: hr@mistrag.com
-- IT Support: itsupport@mistrag.com
-- Payroll: payroll@mistrag.com

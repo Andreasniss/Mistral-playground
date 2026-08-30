@@ -1,439 +1,267 @@
-"""
-demo_streamlit.py — Streamlit web interface for Mistral AI chat
+"""Public Streamlit experience for the Mistral Reliability Lab."""
 
-Provides an interactive web UI for chatting with Mistral AI models.
-Includes weather tool calling functionality and OpenTelemetry instrumentation.
-Run with: streamlit run demo_streamlit.py
-"""
-import streamlit as st
+from __future__ import annotations
+
 import json
-import urllib.request
 import urllib.parse
-import os
-from pathlib import Path
-from llm_client import chat, chat_with_tools, get_client
-from prompts_loader import load_prompt
-import config
+import urllib.request
+from typing import Any
 
-# OpenTelemetry instrumentation for Streamlit UI events
+import streamlit as st
+
+import config
+from llm_client import chat_with_tools
+from prompts_loader import load_prompt
+from showcase import run_showcase
+
 try:
     from opentelemetry import trace
     from opentelemetry.instrumentation.streamlit import StreamlitInstrumentor
 
-    # llm_client owns provider setup. Instrument the UI only when telemetry is
-    # explicitly enabled, avoiding a competing global tracer provider.
     if config.OTEL_ENABLED:
         StreamlitInstrumentor().instrument()
-
-    tracer = trace.get_tracer(__name__)
-
-    def trace_streamlit_event(event_name: str, attributes: dict = None):
-        """Create a metadata-only span for Streamlit UI events."""
-        if not config.OTEL_ENABLED:
-            return
-        with tracer.start_as_current_span(event_name) as span:
-            if attributes:
-                for key, value in attributes.items():
-                    span.set_attribute(key, str(value))
-    
-except ImportError:
-    # Fallback if OpenTelemetry is not available
-    def trace_streamlit_event(event_name: str, attributes: dict = None):
-        """No-op function if OpenTelemetry is not available."""
-        pass
+    _tracer = trace.get_tracer(__name__)
+except ImportError:  # pragma: no cover - optional instrumentation
+    _tracer = None
 
 
-# --- Weather Tool Implementation (Open-Meteo — no API key needed) ------------
+def trace_event(name: str, attributes: dict[str, Any] | None = None) -> None:
+    """Record metadata only. Prompts, responses, and tool payloads stay private."""
+    if not config.OTEL_ENABLED or _tracer is None:
+        return
+    with _tracer.start_as_current_span(name) as span:
+        for key, value in (attributes or {}).items():
+            span.set_attribute(key, str(value))
+
 
 def _geocode(city: str) -> tuple[float, float, str]:
-    """Resolve a city name to (latitude, longitude, resolved_name) via Open-Meteo geocoding."""
     params = urllib.parse.urlencode({"name": city, "count": 1, "language": "en", "format": "json"})
-    url = f"https://geocoding-api.open-meteo.com/v1/search?{params}"
-    with urllib.request.urlopen(url, timeout=10) as resp:
-        data = json.loads(resp.read())
+    with urllib.request.urlopen(f"https://geocoding-api.open-meteo.com/v1/search?{params}", timeout=10) as response:
+        data = json.loads(response.read())
     if not data.get("results"):
         raise ValueError(f"City not found: {city!r}")
-    r = data["results"][0]
-    return r["latitude"], r["longitude"], f"{r['name']}, {r.get('country', '')}"
+    result = data["results"][0]
+    return result["latitude"], result["longitude"], f"{result['name']}, {result.get('country', '')}"
 
 
-def get_current_weather(location: str, format: str) -> str:
-    """Fetch real current weather from Open-Meteo. No API key required."""
+def get_current_weather(location: str, format: str = "celsius") -> str:
     city = location.split(",")[0].strip()
-    lat, lon, resolved_name = _geocode(city)
-
-    temperature_unit = "celsius" if format == "celsius" else "fahrenheit"
+    latitude, longitude, resolved_name = _geocode(city)
+    unit = "celsius" if format == "celsius" else "fahrenheit"
     params = urllib.parse.urlencode({
-        "latitude": lat,
-        "longitude": lon,
+        "latitude": latitude,
+        "longitude": longitude,
         "current": "temperature_2m,apparent_temperature,weather_code,wind_speed_10m",
-        "temperature_unit": temperature_unit,
+        "temperature_unit": unit,
         "wind_speed_unit": "kmh",
         "forecast_days": 1,
     })
-    url = f"https://api.open-meteo.com/v1/forecast?{params}"
-    with urllib.request.urlopen(url, timeout=10) as resp:
-        data = json.loads(resp.read())
-
-    current = data["current"]
-    unit = "°C" if format == "celsius" else "°F"
-
-    # WMO weather code → human-readable condition
-    wmo_conditions = {
-        0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
-        45: "Fog", 48: "Icy fog", 51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
-        61: "Slight rain", 63: "Rain", 65: "Heavy rain", 71: "Slight snow", 73: "Snow",
-        75: "Heavy snow", 80: "Slight showers", 81: "Showers", 82: "Heavy showers",
-        95: "Thunderstorm", 99: "Thunderstorm with hail",
-    }
-    condition = wmo_conditions.get(current["weather_code"], f"Code {current['weather_code']}")
-
+    with urllib.request.urlopen(f"https://api.open-meteo.com/v1/forecast?{params}", timeout=10) as response:
+        current = json.loads(response.read())["current"]
     return json.dumps({
         "location": resolved_name,
-        "temperature": f"{current['temperature_2m']}{unit}",
-        "feels_like": f"{current['apparent_temperature']}{unit}",
-        "condition": condition,
-        "wind_speed": f"{current['wind_speed_10m']} km/h",
+        "temperature": current["temperature_2m"],
+        "temperature_unit": "°C" if unit == "celsius" else "°F",
+        "feels_like": current["apparent_temperature"],
+        "wind_speed_kmh": current["wind_speed_10m"],
+        "weather_code": current["weather_code"],
     })
 
 
-def tool_executor(name: str, args: dict) -> str:
-    """Route tool calls to their implementations."""
-    if name == "get_current_weather":
-        return get_current_weather(**args)
-    elif name == "get_hr_policy_info":
-        return get_hr_policy_info(**args)
-    raise ValueError(f"Unknown tool: {name}")
+def get_policy_information(query: str) -> str:
+    """Return the local policy document; the model extracts only relevant evidence."""
+    policy = (config.PROJECT_ROOT / "RAG" / "hr_policy.md").read_text(encoding="utf-8")
+    return json.dumps({"query": query, "document": policy})
 
 
-# --- RAG Implementation (HR Policy Knowledge Base) --------------------------
+def execute_tool(name: str, args: dict[str, Any]) -> str:
+    allowed = {"get_current_weather": get_current_weather, "search_policy": get_policy_information}
+    if name not in allowed:
+        raise ValueError(f"Tool is not allow-listed: {name}")
+    return allowed[name](**args)
 
-def load_hr_policy():
-    """Load the HR policy document from the RAG directory."""
-    rag_dir = Path("RAG")
-    hr_policy_path = rag_dir / "hr_policy.md"
-    
-    if not hr_policy_path.exists():
-        return "HR policy document not found."
-    
-    try:
-        with open(hr_policy_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    except Exception as e:
-        return f"Error loading HR policy: {str(e)}"
-
-def search_hr_policy(query: str, hr_policy_content: str) -> str:
-    """Simple keyword-based search in HR policy document."""
-    query_lower = query.lower()
-    
-    # Split into sections
-    sections = []
-    current_section = {"title": "", "content": ""}
-    lines = hr_policy_content.split('\n')
-    
-    for line in lines:
-        if line.startswith('#'):
-            if current_section["title"]:
-                sections.append(current_section)
-            current_section = {"title": line.strip('#').strip(), "content": ""}
-        elif line.startswith('##'):
-            if current_section["title"]:
-                sections.append(current_section)
-            current_section = {"title": line.strip('#').strip(), "content": ""}
-        elif line.startswith('###'):
-            if current_section["title"]:
-                sections.append(current_section)
-            current_section = {"title": line.strip('#').strip(), "content": ""}
-        else:
-            current_section["content"] += line + "\n"
-    
-    if current_section["title"]:
-        sections.append(current_section)
-    
-    # Find relevant sections - more flexible matching
-    relevant_sections = []
-    for section in sections:
-        section_lower = section["title"].lower() + " " + section["content"].lower()
-        # Check for any vacation/leave related terms
-        if (query_lower in section_lower or
-            ("vacation" in query_lower and "leave" in section_lower) or
-            ("holiday" in query_lower and ("leave" in section_lower or "vacation" in section_lower)) or
-            ("days" in query_lower and ("vacation" in section_lower or "leave" in section_lower))):
-            relevant_sections.append(section)
-    
-    if not relevant_sections:
-        return "No relevant information found in HR policy."
-    
-    # Format the results
-    result = "Relevant HR Policy Information:\n\n"
-    for i, section in enumerate(relevant_sections[:3]):  # Limit to top 3 sections
-        result += f"### {section['title']}\n\n"
-        result += f"{section['content'].strip()}\n\n"
-        result += "---\n\n"
-    
-    return result.strip()
-
-
-def get_hr_policy_info(query: str) -> str:
-    """Get HR policy information using RAG approach."""
-    # Trace the RAG operation
-    trace_streamlit_event("rag_hr_policy_query", {
-        "query_chars": len(query)
-    })
-    
-    hr_policy_content = load_hr_policy()
-    if "Error" in hr_policy_content or "not found" in hr_policy_content:
-        return hr_policy_content
-    
-    result = search_hr_policy(query, hr_policy_content)
-    
-    # Trace the RAG result
-    trace_streamlit_event("rag_hr_policy_result", {
-        "query_chars": len(query),
-        "result_length": len(result),
-        "has_results": "Yes" if "Relevant HR Policy Information" in result else "No"
-    })
-    
-    return result
-
-
-# --- Tool definitions (sent to the model) ------------------------------------
 
 TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "get_current_weather",
-            "description": "Get the current weather for a city.",
+            "description": "Get current weather for a city from Open-Meteo.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "location": {
-                        "type": "string",
-                        "description": "The city and country, e.g. Paris, France",
-                    },
-                    "format": {
-                        "type": "string",
-                        "enum": ["celsius", "fahrenheit"],
-                        "description": "Temperature unit. Infer from the user's location.",
-                    },
+                    "location": {"type": "string", "description": "City and country"},
+                    "format": {"type": "string", "enum": ["celsius", "fahrenheit"]},
                 },
                 "required": ["location", "format"],
+                "additionalProperties": False,
             },
         },
     },
     {
         "type": "function",
         "function": {
-            "name": "get_hr_policy_info",
-            "description": "Get information from the company HR policy and benefits documentation.",
+            "name": "search_policy",
+            "description": "Search the fictional Acme employee policy for a grounded answer.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The HR-related question or topic to look up, e.g., 'how many vacation days', 'sick leave policy', 'remote work rules'",
-                    },
-                },
+                "properties": {"query": {"type": "string"}},
                 "required": ["query"],
+                "additionalProperties": False,
             },
         },
-    }
+    },
 ]
 
 
-def main():
-    # Trace the main function execution
-    trace_streamlit_event("streamlit_main_start")
-    
-    st.set_page_config(page_title="Mistral AI Chat with Tools & RAG", layout="wide")
-    st.title("🤖 Mistral AI Chat Demo with Weather Tools & HR RAG")
-    
-    # Welcome message with starter hint
-    with st.expander("💡 Click here for a quick start guide", expanded=True):
-        st.markdown("""
-        **Welcome!** This demo lets you chat with Mistral AI with multiple tool integrations.
-        
-        🌤️ **Weather Information:**
-        - "What's the weather in Paris?"
-        - "Should I bring a jacket in London?"
-        - "Compare weather in New York and Tokyo"
-        
-        📚 **HR Policy Questions (RAG-powered):**
-        - "How many vacation days do I get?"
-        - "What's the remote work policy?"
-        - "How much sick leave do employees have?"
-        - "What benefits does Mistrag offer?"
-        
-        💬 **General Chat:**
-        - "Tell me a joke"
-        - "What's the capital of France?"
-        - "Explain quantum computing simply"
-        
-        The AI will automatically use the appropriate tools when needed!
-        """)
-    
-    # Trace UI initialization
-    trace_streamlit_event("ui_initialized")
+def connected_mode() -> bool:
+    if config.LLM_BACKEND == "local":
+        return True
+    return config.MISTRAL_API_KEY not in {None, "", "your_mistral_api_key_here"}
 
-    # Initialize chat history
+
+def _history_for_model() -> list[dict[str, str]]:
+    return [
+        {"role": item["role"], "content": item["content"]}
+        for item in st.session_state.messages[-8:]
+        if item["role"] in {"user", "assistant"}
+    ]
+
+
+def _styles() -> None:
+    st.markdown(
+        """
+        <style>
+          .stApp { background: radial-gradient(circle at 75% 0%, #2b1a14 0, #101114 32rem); }
+          .block-container { max-width: 1120px; padding-top: 2.3rem; }
+          .eyebrow { color:#ff8a5b; font-size:.78rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+          .hero-title { font-size:clamp(2.3rem,5vw,4.5rem); line-height:1.02; letter-spacing:-.045em; margin:.55rem 0 1rem; }
+          .hero-copy { color:#b8bbc3; font-size:1.08rem; max-width:760px; line-height:1.65; }
+          .proof-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:.75rem; margin:1.6rem 0 1.4rem; }
+          .proof { border:1px solid #30333b; background:#181a1f; border-radius:14px; padding:1rem; }
+          .proof strong { display:block; color:#fafafa; margin-bottom:.25rem; }
+          .proof span { color:#8f949f; font-size:.82rem; }
+          .mode { display:inline-flex; gap:.45rem; align-items:center; border:1px solid #3a3d46; border-radius:999px; padding:.35rem .7rem; color:#c8cbd2; font-size:.8rem; }
+          .dot { width:.5rem; height:.5rem; border-radius:50%; background:#ff7a45; box-shadow:0 0 14px #ff7a45; }
+          .evidence { border-left:2px solid #ff7a45; padding:.35rem 0 .35rem .9rem; color:#aeb2bb; font-size:.86rem; }
+          .footer { margin-top:3rem; padding:1.25rem 0; border-top:1px solid #282b31; color:#858a94; font-size:.82rem; }
+          .footer a { color:#bfc3ca; margin-right:1rem; }
+          .footer a:focus { outline:2px solid #ff8a5b; outline-offset:3px; }
+          @media (max-width:760px){ .proof-grid{grid-template-columns:repeat(2,1fr);} }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def main() -> None:
+    st.set_page_config(page_title="Mistral Reliability Lab", page_icon="◆", layout="wide")
+    _styles()
+    is_connected = connected_mode()
+
+    st.markdown('<div class="eyebrow">Applied AI engineering reference</div>', unsafe_allow_html=True)
+    st.markdown('<h1 class="hero-title">Reliable tool-using AI,<br/>made inspectable.</h1>', unsafe_allow_html=True)
+    st.markdown(
+        '<p class="hero-copy">A compact Mistral reference that makes the production concerns visible: '
+        'allow-listed tools, grounded policy answers, bounded retries, privacy-first telemetry, and credential-free tests.</p>',
+        unsafe_allow_html=True,
+    )
+    label = "Connected to model provider" if is_connected else "Credential-free preview"
+    st.markdown(f'<div class="mode"><span class="dot"></span>{label}</div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="proof-grid">
+          <div class="proof"><strong>Tool control</strong><span>Schema-bound, allow-listed execution</span></div>
+          <div class="proof"><strong>Resilience</strong><span>429/5xx retry with jitter</span></div>
+          <div class="proof"><strong>Observability</strong><span>OpenTelemetry metadata, no content</span></div>
+          <div class="proof"><strong>Regression proof</strong><span>Secret-free CI and eval cases</span></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     if "messages" not in st.session_state:
         st.session_state.messages = []
-        trace_streamlit_event("chat_history_initialized")
+    if "queued_prompt" not in st.session_state:
+        st.session_state.queued_prompt = None
 
-    # Load system prompt
-    system_message = load_prompt("system_prompt.txt")
-    trace_streamlit_event("system_prompt_loaded")
+    st.subheader("Try the execution path")
+    examples = [
+        "How many vacation days do employees receive?",
+        "Can employees work remotely?",
+        "What is the weather in Munich?",
+    ]
+    columns = st.columns(3)
+    for column, example in zip(columns, examples):
+        if column.button(example, use_container_width=True):
+            st.session_state.queued_prompt = example
 
-    # Display chat messages from history on app rerun
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+            if message.get("evidence"):
+                st.markdown(f'<div class="evidence">{message["evidence"]}</div>', unsafe_allow_html=True)
 
-    # Accept user input
-    if prompt := st.chat_input("What would you like to ask?"):
-        # Trace user input event
-        trace_streamlit_event("user_input_received", {
-            "input_length": len(prompt),
-            "input_type": "weather" if any(keyword in prompt.lower() for keyword in ["weather", "temperature", "forecast", "climate"]) else "general"
-        })
-        
-        # Add user message to chat history
+    prompt = st.session_state.queued_prompt or st.chat_input("Ask about weather or the fictional employee policy")
+    st.session_state.queued_prompt = None
+    if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
-        
-        # Display user message in chat message container
         with st.chat_message("user"):
             st.markdown(prompt)
-
-        # Display assistant response in chat message container
         with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
-            
-            # Get response from AI - use tool calling if weather-related
-            try:
-                # Check if the prompt is weather-related
-                weather_keywords = ["weather", "temperature", "forecast", "climate"]
-                hr_keywords = ["vacation", "holiday", "leave", "benefit", "policy", "hr", "sick leave", 
-                              "remote work", "compensation", "pension", "insurance", "maternity", "paternity"]
-                
-                if any(keyword in prompt.lower() for keyword in weather_keywords):
-                    # Trace weather tool usage
-                    trace_streamlit_event("weather_tool_invoked", {
-                        "input_chars": len(prompt)
-                    })
-                    # Use tool calling for weather questions
-                    response = chat_with_tools(
-                        user_message=prompt,
-                        tools=TOOLS,
-                        tool_executor=tool_executor,
-                        system_message=system_message
-                    )
-                elif any(keyword in prompt.lower() for keyword in hr_keywords):
-                    # Trace HR RAG tool usage
-                    trace_streamlit_event("hr_rag_tool_invoked", {
-                        "input_chars": len(prompt)
-                    })
-                    # Use tool calling for HR questions
-                    response = chat_with_tools(
-                        user_message=prompt,
-                        tools=TOOLS,
-                        tool_executor=tool_executor,
-                        system_message=system_message
-                    )
-                else:
-                    # Trace regular chat usage
-                    trace_streamlit_event("regular_chat_invoked", {
-                        "input_chars": len(prompt)
-                    })
-                    # Use regular chat for other questions
-                    response = chat(prompt, system_message=system_message)
-                full_response = response
-                message_placeholder.markdown(full_response)
-                
-                # Trace successful response
-                trace_streamlit_event("response_completed", {
-                    "response_length": len(full_response),
-                    "response_type": "weather" if any(keyword in prompt.lower() for keyword in weather_keywords) else "general"
-                })
-                
-            except Exception as e:
-                message_placeholder.markdown(f"Error: {str(e)}")
-                st.error(f"An error occurred: {str(e)}")
-                # Trace error
-                trace_streamlit_event("response_error", {
-                    "error_type": type(e).__name__
-                })
+            with st.spinner("Running the request…"):
+                try:
+                    if is_connected:
+                        response = chat_with_tools(
+                            user_message=prompt,
+                            tools=TOOLS,
+                            tool_executor=execute_tool,
+                            system_message=load_prompt("system_prompt.txt"),
+                            conversation_history=_history_for_model()[:-1],
+                        )
+                        evidence = f"Model: {config.MISTRAL_MODEL} · Tools available: 2 · Content telemetry: off"
+                    else:
+                        preview = run_showcase(prompt)
+                        response = preview.answer
+                        tool = preview.tool or "none"
+                        evidence = f"Route: {preview.route} · Tool: {tool} · {preview.latency_ms} ms · No provider call"
+                    st.markdown(response)
+                    st.markdown(f'<div class="evidence">{evidence}</div>', unsafe_allow_html=True)
+                    trace_event("request_completed", {"input_chars": len(prompt), "connected": is_connected})
+                except Exception as exc:
+                    response = "The request could not be completed. Check provider configuration and local logs."
+                    evidence = f"Failure type: {type(exc).__name__} · Sensitive content omitted"
+                    st.error(response)
+                    trace_event("request_failed", {"error_type": type(exc).__name__})
+        st.session_state.messages.append({"role": "assistant", "content": response, "evidence": evidence})
 
-        # Add assistant response to chat history
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
-        trace_streamlit_event("chat_history_updated", {
-            "total_messages": len(st.session_state.messages)
-        })
+    with st.expander("Architecture and trust boundaries"):
+        st.markdown(
+            "**Request → Mistral/Ollama → allow-listed tool → validated result → grounded answer**\n\n"
+            "The model proposes tool calls; application code decides which functions can execute. "
+            "Logs and spans contain latency, token counts, tool names, and error types, never prompt or response content."
+        )
 
-    # Sidebar with configuration
-    st.sidebar.title("⚙️ Configuration")
-    st.sidebar.markdown(f"""
-    **Current Settings:**
-    - 🤖 Model: `{config.MISTRAL_MODEL}`
-    - 🌡️ Temperature: `{config.MISTRAL_TEMPERATURE}`
-    - 📝 Max Tokens: `{config.MISTRAL_MAX_TOKENS}`
-    - 🎯 Top P: `{config.MISTRAL_TOP_P}`
-    - 🔄 Max Retries: `{config.RETRY_MAX_ATTEMPTS}`
-    """)
-    st.sidebar.markdown("""
-    ### How to Use
-    1. Type your message in the input box at the bottom
-    2. Press Enter to send
-    3. The AI will respond conversationally
-    4. Continue the conversation naturally
-    
-    **Features:**
-    - 🌤️ Real-time weather data
-    - 📚 HR policy lookup (RAG)
-    - 💬 General conversation
-    """)
-    
-    st.sidebar.markdown("""
-    ### 📚 HR Policy Examples (RAG)
-    Try these HR-related questions:
-    - "How many vacation days do I get per year?"
-    - "What's the remote work policy at Mistrag?"
-    - "How much sick leave do I have?"
-    - "What benefits are included in the compensation package?"
-    - "What's the parental leave policy?"
-    """)
-    st.sidebar.markdown("""
-    ### 📝 Notes
-    - The conversation history is maintained during this session
-    - Refresh the page to start a new conversation
-    - Weather data powered by **Open-Meteo** (free, no API key needed)
-    - HR policy data powered by **RAG** (local document search)
-    """)
-    
-    st.sidebar.markdown("""
-    ### 🔧 Model Parameters Explained
-    - **Temperature**: Controls randomness (0.0 = deterministic, 2.0 = creative)
-    - **Max Tokens**: Maximum response length
-    - **Top P**: Nucleus sampling for diversity
-    - **Max Retries**: How many times to retry failed requests
-    """)
-    
-    st.sidebar.markdown("""
-    ### 🔍 OpenTelemetry Tracing
-    **Status:** `{}`
-    
-    This demo includes comprehensive tracing for observability:
-    - 📊 **UI Events**: User interactions, chat flows
-    - ⚡ **Performance**: Response times, processing duration  
-    - 📈 **Usage**: Weather vs regular chat analytics
-    - 🚨 **Errors**: Full error context and debugging
-    
-    **To view traces:**
-    1. Start Jaeger: `docker run -d -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one:latest`
-    2. Open: [http://localhost:16686](http://localhost:16686)
-    3. Filter by service: `demo_streamlit`
-    """.format("✅ Active" if hasattr(trace, 'get_tracer_provider') else "❌ Disabled"))
+    with st.sidebar:
+        st.header("Runtime evidence")
+        st.metric("Backend", "Mistral" if config.LLM_BACKEND == "api" else "Ollama")
+        st.metric("Model", config.MISTRAL_MODEL)
+        st.metric("Retry attempts", config.RETRY_MAX_ATTEMPTS)
+        st.caption("OpenTelemetry export: " + ("enabled" if config.OTEL_ENABLED else "disabled by default"))
+        if st.button("Clear conversation", use_container_width=True):
+            st.session_state.messages = []
+            st.rerun()
+        st.divider()
+        st.markdown("**Reviewer shortcuts**")
+        st.markdown("[Source code](https://github.com/Andreasniss/Mistral-playground)")
+        st.markdown("[CI runs](https://github.com/Andreasniss/Mistral-playground/actions)")
+        st.caption("The policy is fictional and the preview is deterministic. Connected mode performs real model calls.")
+
+    st.markdown(
+        '<div class="footer"><a href="https://github.com/Andreasniss" target="_blank" rel="noopener noreferrer">Built by Andreas Nissen</a>'
+        '<a href="https://github.com/Andreasniss/Mistral-playground" target="_blank" rel="noopener noreferrer">Source on GitHub</a></div>',
+        unsafe_allow_html=True,
+    )
 
 
 if __name__ == "__main__":

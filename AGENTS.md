@@ -1,184 +1,92 @@
-# Agent Guide — Mistral-playground
+# Agent Guide — Mistral Reliability Lab
 
-This file is the single reference for any coding agent (Claude Code, Vibestral, Devstral, Cursor, etc.) working in this repo. Read it before making changes.
+Read this file and `TASKS.md` before changing the repository.
 
----
+## Purpose
 
-## Task Tracking
+This is a compact applied-AI engineering reference for Mistral cloud and local
+Ollama models. It demonstrates provider abstraction, controlled tool use, grounded
+answers, bounded retries, privacy-first telemetry, and credential-free regression
+tests. It is not a production service or a model-quality benchmark.
 
-Task state lives in `TASKS.md`. Read it before starting work.
+## Task tracking
 
-- **Starting a task** → move it from Backlog to In Progress
-- **Done** → move it to the Done section
-- **New work discovered** → add it to the Backlog
+Task state lives in `TASKS.md`.
 
-`TASKS.md` is the single source of truth for task state. Do not track work in comments or external tools.
+- Move active work to **In Progress** before implementation.
+- Move completed work to **Done** after verification.
+- Add discovered but unimplemented work to **Backlog**.
 
----
+## Architecture
 
-## What This Repo Is
+| File | Responsibility |
+|---|---|
+| `config.py` | Environment configuration and runtime validation |
+| `llm_client.py` | Provider boundary, retry loop, tool-call loop, telemetry |
+| `demo_streamlit.py` | Reviewer-facing UI and application tool allow-list |
+| `showcase.py` | Deterministic credential-free preview and retrieval |
+| `api.py` | Typed, localhost-only FastAPI surface |
+| `evals/` | Versioned deterministic evaluation contract |
+| `tests/` | Unit, privacy, and Streamlit interaction tests |
+| `RAG/hr_policy.md` | Synthetic grounding document |
+| `prompts/` | Version-controlled prompt templates |
 
-A structured Python learning lab for the Mistral AI API that demonstrates production-oriented patterns: centralised config, metadata-only logging and tracing, a singleton API client, prompt file management, retry with exponential backoff, and mocked unit tests. It is not a production service or an evaluation benchmark.
+## Invariants
 
-It is intentionally minimal — a foundation to extend, not a finished product.
+1. `config.py` is the only module that reads environment variables.
+2. Application surfaces go through `llm_client.chat()` or
+   `llm_client.chat_with_tools()`. Capability-specific scripts may use the SDK
+   directly only when the shared wrapper does not expose that feature (for example,
+   streaming or raw usage comparison), and must say so in their module docstring.
+3. Tests and deterministic evals never require credentials or make model calls.
+4. Tools are declared with narrow JSON schemas and executed through an explicit
+   application allow-list. Never execute a model-provided function name dynamically.
+5. Logs and spans contain operational metadata only. Do not record prompts,
+   responses, tool arguments, tool results, secrets, or policy content.
+6. OpenTelemetry export remains opt-in.
+7. Missing cloud credentials fail only when connected mode requests a client;
+   imports, CI, and preview mode must remain credential-free.
+8. `.env`, logs, virtual environments, and Python caches are never committed.
+9. The local policy remains clearly labelled as fictional/synthetic.
+10. Do not describe deterministic component checks as model-quality evaluation.
 
----
-
-## File Map
-
-```
-Mistral-playground/
-├── config.py           # loads + validates all env vars — single source of truth for settings
-├── logger.py           # get_logger(name) — console handler + file handler
-├── llm_client.py       # chat() — the only public API entry point; get_client() singleton
-├── prompts_loader.py   # load_prompt(filename) — reads .txt files from prompts/
-├── main.py             # run_basic_chat(), run_summarize() — wires modules together
-├── demo_structured.py  # structured JSON output with response_format + Pydantic validation
-├── demo.ipynb          # interactive notebook demonstrating every module
-├── prompts/
-│   ├── system_prompt.txt
-│   └── summarize.txt   # uses {{TEXT}} placeholder
-├── tests/
-│   └── test_main.py    # 12 unit tests — all mocked, no real API calls
-├── .env.example        # safe template — committed
-├── .env                # real secrets — NEVER committed (gitignored)
-└── requirements.txt    # mistralai>=2.0.0, python-dotenv>=1.0.0, pytest>=8.0.0
-```
-
----
-
-## Architecture & Invariants
-
-Keep these patterns intact when modifying the repo.
-
-### 1. `config.py` is the only place that reads env vars
-
-All other modules import from `config`, never call `os.getenv` themselves.
-`config.py` raises `EnvironmentError` at import time if `MISTRAL_API_KEY` is missing.
-
-### 2. `chat()` in `llm_client.py` is the only public API surface
-
-All Mistral API calls go through `chat()`. Do not call `get_client().chat.complete()` directly in application code — that bypasses retry logic and logging.
-
-### 3. Singleton client — `get_client()`
-
-`_client` is a module-level variable. `get_client()` creates it once on first call. Do not reset or replace `_client` outside of tests.
-
-### 4. Prompts live in `prompts/` as `.txt` files
-
-Do not hardcode prompt strings in Python. Add a `.txt` file and use `load_prompt()`.
-Use `{{PLACEHOLDER}}` for template variables (double braces — no collision with f-strings).
-
-### 5. Tests must not make real API calls
-
-All tests in `tests/` mock `get_client()` via `unittest.mock.patch`. If you add tests, follow this pattern. No test should require `MISTRAL_API_KEY` to be set.
-
-### 6. Never commit `.env`
-
-It is in `.gitignore`. Update `.env.example` if you add new env vars.
-
----
-
-## Environment Setup
+## Development workflow
 
 ```bash
-pip install -r requirements.txt
-cp .env.example .env        # then fill in MISTRAL_API_KEY
+uv sync --locked --dev
+uv run ruff check .
+uv run pytest -q
+uv run python -m evals.run_evals
+uv run streamlit run demo_streamlit.py
 ```
 
-### All supported env vars
+CI uses the committed `uv.lock`. Update it with `uv lock` whenever dependencies
+change. `requirements.txt` remains as a simple pip-compatible entry point.
+
+## Supported configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MISTRAL_API_KEY` | — | **Required.** Get from console.mistral.ai |
-| `MISTRAL_MODEL` | `mistral-large-latest` | Model alias or pinned ID |
-| `MISTRAL_MAX_TOKENS` | `1024` | Default token limit per call |
-| `MISTRAL_TEMPERATURE` | `0.0` | Sampling temperature (0.0 = deterministic, recommended for testing) |
-| `LOG_LEVEL` | `INFO` | Console log verbosity (`DEBUG`/`INFO`/`WARNING`/`ERROR`) |
-| `RETRY_MAX_ATTEMPTS` | `3` | Total attempts including the first |
-| `RETRY_BASE_DELAY` | `0.5` | Seconds before first retry |
-| `RETRY_MAX_DELAY` | `60.0` | Cap on any single delay |
+| `LLM_BACKEND` | `api` | `api` for Mistral or `local` for Ollama |
+| `MISTRAL_API_KEY` | — | Required only for connected Mistral mode |
+| `MISTRAL_MODEL` | backend-dependent | Cloud or local model name |
+| `MISTRAL_MAX_TOKENS` | `1024` | Maximum generated tokens |
+| `MISTRAL_TEMPERATURE` | `0.0` | Sampling temperature |
+| `MISTRAL_TOP_P` | unset | Optional nucleus sampling; avoid combining with temperature |
+| `REQUEST_TIMEOUT` | `30` | Local-provider request timeout in seconds |
+| `RETRY_MAX_ATTEMPTS` | `3` | Total attempts, including the first |
+| `RETRY_BASE_DELAY` | `0.5` | Initial retry delay in seconds |
+| `RETRY_MAX_DELAY` | `60.0` | Maximum retry delay in seconds |
+| `MAX_TOOL_ROUNDS` | `4` | Maximum model/tool cycles per request |
+| `OTEL_ENABLED` | `false` | Opt in to trace export |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4317` | OTLP/gRPC endpoint |
+| `API_KEY` | — | Protects local FastAPI model endpoints |
 
----
+## Extension rules
 
-## Running the Code
-
-```bash
-python main.py          # run the two demos (requires MISTRAL_API_KEY)
-pytest tests/           # run all tests (no API key needed)
-jupyter notebook demo.ipynb   # interactive walkthrough
-```
-
----
-
-## How to Extend
-
-### Add a new prompt
-
-1. Create `prompts/your_prompt.txt`
-2. Use `{{PLACEHOLDER}}` for any dynamic values
-3. Load with `load_prompt("your_prompt.txt")` and fill with `.replace()`
-
-### Add a new use case
-
-Write a function in `main.py` that calls `chat()`. Import `load_prompt` for any prompt files.
-
-```python
-def run_my_feature(input_text: str):
-    template = load_prompt("my_prompt.txt")
-    prompt = template.replace("{{INPUT}}", input_text)
-    response = chat(prompt, system_message=load_prompt("system_prompt.txt"))
-    print(response)
-```
-
-### Override model / params per call
-
-```python
-chat(
-    user_message="...",
-    model="mistral-small-latest",   # cheaper/faster for simple tasks
-    temperature=0.0,                 # deterministic output
-    max_tokens=100,                  # short reply
-)
-```
-
-### Add a new env var
-
-1. Add it to `.env.example` with a placeholder value and comment
-2. Read and type-coerce it in `config.py`
-3. Use `config.YOUR_VAR` everywhere else
-
----
-
-## Key Patterns Reference
-
-### Retry logic (`llm_client.py`)
-
-Retries on: `429, 500, 502, 503, 504`
-Does NOT retry: `4xx` client errors (they won't self-resolve)
-Delay formula: `min(base_delay × 2^attempt + jitter(0–0.5s), max_delay)`
-If server sends `Retry-After` header, that value is used instead.
-
-### Logging
-
-Each `chat()` call generates a short random `trace_id` (e.g. `a3f9c21b`).
-Every log line for that call carries the same `trace_id` — grep for it to see the full lifecycle.
-
-Console level: controlled by `LOG_LEVEL` in `.env`
-File level: always `DEBUG` → `logs/app.log`
-
-### Message roles
-
-System message (if provided) must come before the user message in the array.
-Valid roles: `system`, `user`, `assistant`, `tool`
-
----
-
-## What NOT to Do
-
-- Do not call `os.getenv()` outside `config.py`
-- Do not import from `mistralai` directly in `main.py` — use `llm_client.chat()`
-- Do not hardcode model names outside `config.py` (except per-call overrides for demos)
-- Do not add `print()` statements to library modules (`config`, `logger`, `llm_client`, `prompts_loader`) — use the logger
-- Do not write to `logs/` manually — the logger handles it
-- Do not commit `.env`, `logs/`, or `__pycache__/`
+- Put reusable prompts in `prompts/*.txt` and load them with `load_prompt()`.
+- Add a test for each new routing, retry, privacy, tool, or configuration behavior.
+- Add or update a versioned eval case when changing preview routing or grounding.
+- Keep public claims tied to code or automated evidence.
+- Document production gaps in `SECURITY.md`; do not silently broaden this demo's
+  security or reliability claims.

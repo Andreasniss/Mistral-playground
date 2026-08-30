@@ -1,5 +1,6 @@
-from typing import Optional
-from fastapi import FastAPI, HTTPException, Security, Depends
+import secrets
+
+from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.security.api_key import APIKeyHeader
 from pydantic import BaseModel
 
@@ -23,7 +24,7 @@ def _verify_api_key(api_key: str = Security(_API_KEY_HEADER)) -> str:
     """Dependency that validates the X-API-Key header against API_KEY in .env."""
     if not config.API_KEY:
         raise HTTPException(status_code=500, detail="API_KEY is not configured on the server")
-    if api_key != config.API_KEY:
+    if not api_key or not secrets.compare_digest(api_key, config.API_KEY):
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key header")
     return api_key
 
@@ -34,7 +35,7 @@ def _verify_api_key(api_key: str = Security(_API_KEY_HEADER)) -> str:
 
 class ChatRequest(BaseModel):
     message: str
-    system: Optional[str] = None
+    system: str | None = None
 
 
 class ChatResponse(BaseModel):

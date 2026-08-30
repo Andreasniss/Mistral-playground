@@ -1,0 +1,41 @@
+[project]
+name = "mistral-reliability-lab"
+version = "0.2.0"
+description = "Inspectable tool-using AI reference with Mistral and Ollama"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+authors = [{ name = "Andreas Nissen" }]
+dependencies = [
+  "fastapi>=0.115.0",
+  "mistralai>=1.0.0",
+  "openai>=1.0.0",
+  "opentelemetry-exporter-otlp>=1.39.0",
+  "opentelemetry-instrumentation>=0.60.0",
+  "opentelemetry-instrumentation-requests>=0.60.0",
+  "opentelemetry-sdk>=1.39.0",
+  "python-dotenv>=1.0.0",
+  "streamlit>=1.30.0",
+  "uvicorn>=0.30.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.12.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+target-version = "py312"
+line-length = 110
+exclude = ["demo.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
