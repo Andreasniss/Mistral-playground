@@ -12,6 +12,8 @@ credential-free tests, and a deterministic evaluation contract.
 > Portfolio scope: an applied-AI engineering reference, not a production service
 > or a claim of model-quality benchmarking.
 
+**Verified 31 August 2026:** Ruff passes, 26 credential-free tests pass, all 6 deterministic evaluation cases pass, and the locked runtime dependency audit reports no known vulnerabilities.
+
 ## What reviewers can verify
 
 | Concern | Implementation | Evidence |
@@ -23,6 +25,8 @@ credential-free tests, and a deterministic evaluation contract.
 | Observability | Opt-in OpenTelemetry with latency, usage, tool, and error metadata | `llm_client.py` |
 | Regression safety | Secret-free CI, deterministic evals, locked dependency audit | `.github/workflows/ci.yml`, `evals/`, `uv.lock` |
 | Provider choice | Mistral cloud or local Ollama through one client boundary | `config.py`, `llm_client.py` |
+
+Related writing: [The Hard Part of Agentic AI Starts After the Demo](https://andreasnissen.dev/writing/agentic-ai-after-the-demo/) explains the production architecture around this reference. [How I Review AI-Built Public Work Without Outsourcing Judgment](https://andreasnissen.dev/writing/reviewing-ai-built-public-work/) explains the evidence and ownership standard applied to it.
 
 ## Try it in 60 seconds
 
@@ -159,4 +163,10 @@ prompts/            version-controlled prompt templates
 - Authentication is suitable for a local demo, not a public multi-tenant endpoint.
 - No claims are made about safety, correctness, or availability beyond the tested paths.
 
-Built by [Andreas Nissen](https://github.com/Andreasniss). Licensed under Apache 2.0.
+## Ownership and AI assistance
+
+Andreas Nissen owns the project intent, architecture, requirements, evaluation criteria, risk decisions, and release decisions, and reviews merged changes. AI tools assisted with implementation and documentation. Automated and AI-assisted checks are evidence, not substitutes for human accountability.
+
+This is a personal project. Views and opinions are Andreas's own and do not represent his employer.
+
+Built by [Andreas Nissen](https://github.com/Andreasniss). See [andreasnissen.dev](https://andreasnissen.dev) and [connect on LinkedIn](https://www.linkedin.com/in/andreasnissen). Licensed under Apache 2.0.
