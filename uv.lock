@@ -727,7 +727,7 @@ wheels = [
 ]
 
 [[package]]
-name = "mistral-reliability-lab"
+name = "agent-reliability-lab"
 version = "0.2.0"
 source = { virtual = "." }
 dependencies = [
