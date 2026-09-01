@@ -1,4 +1,4 @@
-"""Public Streamlit experience for the Mistral Reliability Lab."""
+"""Public Streamlit experience for the Agent Reliability Lab."""
 
 from __future__ import annotations
 
@@ -155,7 +155,7 @@ def _styles() -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Mistral Reliability Lab", page_icon="◆", layout="wide")
+    st.set_page_config(page_title="Agent Reliability Lab", page_icon="◆", layout="wide")
     _styles()
     is_connected = connected_mode()
 

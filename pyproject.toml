@@ -1,5 +1,5 @@
 [project]
-name = "mistral-reliability-lab"
+name = "agent-reliability-lab"
 version = "0.2.0"
 description = "Inspectable tool-using AI reference with Mistral and Ollama"
 readme = "README.md"

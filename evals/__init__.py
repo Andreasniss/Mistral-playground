@@ -1,1 +1,1 @@
-"""Evaluation package for the Mistral Reliability Lab."""
+"""Evaluation package for the Agent Reliability Lab."""
