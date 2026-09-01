@@ -1,4 +1,4 @@
-# Agent Guide — Mistral Reliability Lab
+# Agent Guide — Agent Reliability Lab
 
 Read this file and `TASKS.md` before changing the repository.
 

@@ -34,6 +34,7 @@ In-flight and backlog items for this repo.
 
 ## Done
 
+- [x] Public project identity synchronization — renamed the repository and application surface to Agent Reliability Lab while retaining Mistral and Ollama as the explicit supported providers
 - [x] Evidence-led repository handoff — dated verified gate snapshot, reciprocal companion-article links, and explicit human ownership and AI-assistance disclosure
 - [x] Dependency security gate — export the locked runtime set and fail CI on known
   vulnerabilities or incomplete dependency collection with `pip-audit`
