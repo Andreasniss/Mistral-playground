@@ -12,7 +12,7 @@ from logger import get_logger
 logger = get_logger("api")
 
 app = FastAPI(
-    title="Mistral Playground API",
+    title="Agent Reliability Lab API",
     version="1.0.0",
     description="Local HTTP wrapper around the Mistral API. Requires X-API-Key header on protected endpoints.",
 )
