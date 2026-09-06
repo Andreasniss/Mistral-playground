@@ -20,8 +20,8 @@ PATTERNS = [
     ('AWS access key', re.compile(rb'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b')),
     ('GitHub token', re.compile(rb'\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b')),
     ('provider token', re.compile(rb'\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{30,}\b')),
-    ('local user path', re.compile(rb'/(?:Users|home)/[A-Za-z0-9_.-]+/')),
-    ('Windows user path', re.compile(rb'(?:[A-Za-z]:[\\/]+|[\\/]{2}[^\\/]+[\\/]+(?:[^\\/]+[\\/]+)?)(?:Users|home)[\\/]+[^\\/\r\n]+[\\/]', re.I)),
+    ('local user path', re.compile(rb'/(?:Users|home)/[A-Za-z0-9_.-]+')),
+    ('Windows user path', re.compile(rb'(?:[A-Za-z]:[\\/]+|[\\/]{2}[^\\/]+[\\/]+(?:[^\\/]+[\\/]+)?)(?:Users|home)[\\/]+[^\\/\r\n]+', re.I)),
     ('image authoring field', re.compile(rb'(?<![A-Za-z0-9_])(?:style[_-]?prompt|image[_-]?prompt|generation[_-]?prompt|negative[_-]?prompt|base[_-]?style[_-]?prompt)["\x27]?\s*[:=]', re.I)),
 ]
 PRIVATE_PARTS = {'.agents', '.agent', '.obsidian', 'transcripts', 'chat-history', 'private-authoring'}
@@ -135,7 +135,7 @@ def check_refs(refs):
                 print('BLOCKED object ' + oid[:12] + ': ' + ', '.join(problems), file=sys.stderr)
         if ref != ':':
             commit = git('rev-parse', ref + '^{commit}').decode().strip()
-            metadata = [(commit, git('show', '-s', '--format=%B', commit))]
+            metadata = [(commit, git('cat-file', 'commit', commit))]
             current = git('rev-parse', ref).decode().strip()
             visited_tags = set()
             while git('cat-file', '-t', current).strip() == b'tag':

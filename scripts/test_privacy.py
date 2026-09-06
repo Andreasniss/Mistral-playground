@@ -55,6 +55,10 @@ class ContentChecks(unittest.TestCase):
             self.assertTrue(privacy.inspect('data.txt', spaced.encode()))
             self.assertTrue(privacy.inspect('data.json', json.dumps(spaced).encode()))
 
+    def test_home_directory_without_child(self):
+        for path in ['/ho' + 'me/alice', '/Us' + 'ers/alice', 'C:' + chr(92) + 'Users' + chr(92) + 'alice']:
+            self.assertTrue(privacy.inspect('data.txt', path.encode()))
+
     def test_unquoted_authoring_fields(self):
         for delimiter in [':', '=']:
             self.assertTrue(privacy.inspect('data.yaml', ('image' + '_prompt' + delimiter + ' recipe').encode()))
@@ -279,6 +283,11 @@ class GitChecks(unittest.TestCase):
         head = self.git('rev-parse', 'HEAD').strip()
         (self.root / '.git/info/grafts').write_text(head + '\n')
         self.assertEqual(self.check('--range', self.base, head).returncode, 2)
+
+    def test_commit_message_ignores_display_encoding(self):
+        self.git('commit', '--allow-empty', '-qm', 'PRIVATE' + '_ONLY')
+        self.git('config', 'i18n.logOutputEncoding', 'UTF-16LE')
+        self.assertEqual(self.check('--range', self.base, 'HEAD').returncode, 1)
 
     def test_commit_message(self):
         self.git('commit', '--allow-empty', '-qm', 'PRIVATE' + '_ONLY')
