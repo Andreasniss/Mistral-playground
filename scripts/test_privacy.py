@@ -33,11 +33,22 @@ class ContentChecks(unittest.TestCase):
                       b'{"image' + b'_prompt": "recipe"}']:
             self.assertTrue(privacy.inspect('data.txt', value))
 
+    def test_private_key_variants(self):
+        for prefix in ['ENCRYPTED', 'DSA', 'RSA', 'EC', 'OPENSSH']:
+            data = ('-----BEGIN ' + prefix + ' PRIVATE' + ' KEY-----').encode()
+            self.assertTrue(privacy.inspect('neutral.txt', data))
+
+    def test_widget_state(self):
+        data = json.dumps({'nbformat': 4, 'nbformat_minor': 0, 'cells': [], 'metadata': {'widgets': {'state': 'result'}}}).encode()
+        self.assertTrue(privacy.inspect('demo.ipynb', data))
+
     def test_symlink(self):
         self.assertTrue(privacy.inspect('asset.txt', b'elsewhere', '120000'))
 
     def test_notebook(self):
-        clean = {'cells': [{'cell_type': 'code', 'outputs': [], 'execution_count': None}]}
+        clean = {'nbformat': 4, 'nbformat_minor': 0, 'metadata': {},
+                 'cells': [{'cell_type': 'code', 'metadata': {}, 'source': [],
+                            'outputs': [], 'execution_count': None}]}
         self.assertFalse(privacy.inspect('demo.ipynb', json.dumps(clean).encode()))
         clean['cells'][0]['outputs'] = [{'output_type': 'stream', 'text': ['result']}]
         data = json.dumps(clean).encode()
@@ -46,17 +57,22 @@ class ContentChecks(unittest.TestCase):
         self.assertFalse(privacy.inspect('demo.ipynb', data, notebook_baseline=baseline))
         self.assertTrue(privacy.inspect('demo.ipynb', data + b' ', notebook_baseline=baseline))
         self.assertTrue(privacy.inspect('demo.ipynb', b'{}'))
+        self.assertTrue(privacy.inspect('demo.ipynb', b'{"cells":[]}'))
 
 
 class GitChecks(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name) / 'work'
+        self.root.mkdir()
         self.env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
         self.git('init', '-q')
         self.git('config', 'user.name', 'Privacy test')
         self.git('config', 'user.email', 'privacy@example.invalid')
         self.git('config', 'core.hooksPath', '/dev/null')
+        remote = str(Path(self.temp.name) / 'remote.git')
+        self.git('init', '--bare', '-q', remote)
+        self.git('remote', 'add', 'origin', remote)
         (self.root / 'readme.txt').write_text('Public example')
         self.git('add', '.')
         self.git('commit', '-qm', 'Base')
@@ -99,6 +115,58 @@ class GitChecks(unittest.TestCase):
         head = self.git('rev-parse', 'HEAD').strip()
         line = 'refs/heads/topic ' + head + ' refs/heads/topic ' + '0' * 40 + '\n'
         self.assertEqual(self.check('--pre-push', 'origin', input_text=line).returncode, 0)
+
+    def test_zero_base_excludes_existing_remote_history(self):
+        p = self.root / '.env.local'
+        p.write_text('OLD=sample')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Historical material')
+        self.git('rm', '-q', '.env.local')
+        self.git('commit', '-qm', 'Historical cleanup')
+        self.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
+        self.git('commit', '--allow-empty', '-qm', 'New branch')
+        self.assertEqual(self.check('--range', '0' * 40, 'HEAD').returncode, 0)
+        p.write_text('NEW=sample')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'New disclosure')
+        self.assertEqual(self.check('--range', '0' * 40, 'HEAD').returncode, 1)
+
+    def test_candidate_cannot_authorize_output(self):
+        data = json.dumps({'nbformat': 4, 'nbformat_minor': 0, 'metadata': {},
+                           'cells': [{'cell_type': 'code', 'source': [], 'metadata': {},
+                                      'execution_count': None, 'outputs': [{'text': ['result']}]}]}).encode()
+        (self.root / 'demo.ipynb').write_bytes(data)
+        (self.root / '.privacy-notebooks.json').write_text(json.dumps(
+            {'demo.ipynb': hashlib.sha256(data).hexdigest()}))
+        self.git('add', '.')
+        self.assertEqual(self.check('--staged').returncode, 1)
+        self.git('commit', '-qm', 'Candidate exception')
+        self.assertEqual(self.check('--range', self.base, 'HEAD').returncode, 1)
+
+    def test_stale_tracking_ref_cannot_hide_new_history(self):
+        p = self.root / '.env.local'
+        p.write_text('SAMPLE=value')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Intermediate')
+        self.git('rm', '-q', '.env.local')
+        self.git('commit', '-qm', 'Cleanup')
+        self.git('update-ref', 'refs/remotes/origin/stale', 'HEAD')
+        head = self.git('rev-parse', 'HEAD').strip()
+        line = 'refs/heads/topic ' + head + ' refs/heads/topic ' + '0' * 40 + '\n'
+        self.assertEqual(self.check('--pre-push', 'origin', input_text=line).returncode, 1)
+
+    def test_updated_annotated_tag(self):
+        self.git('tag', '-a', 'v1', '-m', 'Public version')
+        old = self.git('rev-parse', 'v1').strip()
+        self.git('commit', '--allow-empty', '-qm', 'New version')
+        self.git('tag', '-fa', 'v1', '-m', 'PRIVATE' + '_ONLY')
+        tag = self.git('rev-parse', 'v1').strip()
+        line = 'refs/tags/v1 ' + tag + ' refs/tags/v1 ' + old + '\n'
+        result = self.check('--pre-push', 'origin', input_text=line)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(tag[:12], result.stderr)
+        self.assertEqual(self.check('--range', old, tag).returncode, 1)
+        self.assertNotIn('PRIVATE' + '_ONLY', result.stderr)
 
     def test_commit_message(self):
         self.git('commit', '--allow-empty', '-qm', 'PRIVATE' + '_ONLY')
