@@ -1,8 +1,9 @@
 # Agent Reliability Lab
 
+[Built by Andreas Nissen](https://github.com/Andreasniss) · [andreasnissen.dev](https://andreasnissen.dev) · [Connect on LinkedIn](https://www.linkedin.com/in/andreasnissen) · [Source on GitHub](https://github.com/Andreasniss/Mistral-playground) · [Apache-2.0](LICENSE)
+
 [![CI](https://github.com/Andreasniss/Mistral-playground/actions/workflows/ci.yml/badge.svg)](https://github.com/Andreasniss/Mistral-playground/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB.svg)](https://www.python.org/)
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 A compact reference for building inspectable, tool-using AI with Mistral or local
 Ollama models. The project makes the engineering around the model visible:
@@ -169,8 +170,10 @@ Andreas Nissen owns the project intent, architecture, requirements, evaluation c
 
 This is a personal project. Views and opinions are Andreas's own and do not represent his employer.
 
-Built by [Andreas Nissen](https://github.com/Andreasniss). See [andreasnissen.dev](https://andreasnissen.dev) and [connect on LinkedIn](https://www.linkedin.com/in/andreasnissen). Licensed under Apache 2.0.
-
 ## Contributing safely
 
 Read [the publication privacy boundary](PRIVACY.md) and install the local Git hooks before uploading changes. Private authoring stays outside public branches and PRs; intentional demo prompts and reviewed engineering evidence remain public.
+
+## Reuse and contributions
+
+Copyright 2026 Andreas Nissen. Original project code and accompanying technical documentation are licensed under [Apache-2.0](LICENSE), except where separately indicated. See [NOTICE](NOTICE). Third-party dependencies and bundled material retain their own terms. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, verification, and contribution expectations.

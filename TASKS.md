@@ -6,6 +6,7 @@ In-flight and backlog items for this repo.
 
 ## In Progress
 
+
 <!-- Add items here when you start working on them -->
 
 ---
@@ -33,6 +34,8 @@ In-flight and backlog items for this repo.
 ---
 
 ## Done
+
+- [x] Aligned Apache-2.0 notices, README attribution, and contribution guidance; lint, 64 tests, and six deterministic evaluations passed.
 
 - [x] Publication privacy checks, optional Git hooks, notebook output cleanup, environment-file exclusions, and pinned CI Actions; local privacy tests, lint, 37 application tests, and six deterministic evaluations passed.
 
