@@ -42,6 +42,33 @@ class ContentChecks(unittest.TestCase):
         data = json.dumps({'nbformat': 4, 'nbformat_minor': 0, 'cells': [], 'metadata': {'widgets': {'state': 'result'}}}).encode()
         self.assertTrue(privacy.inspect('demo.ipynb', data))
 
+    def test_windows_user_paths(self):
+        for path in ['C:' + chr(92) + 'Users' + chr(92) + 'demo' + chr(92) + 'note.txt',
+                     chr(92) * 2 + 'server' + chr(92) + 'Users' + chr(92) + 'demo' + chr(92) + 'note.txt']:
+            self.assertTrue(privacy.inspect('data.txt', path.encode()))
+            self.assertTrue(privacy.inspect('data.json', json.dumps(path).encode()))
+
+    def test_unquoted_authoring_fields(self):
+        for delimiter in [':', '=']:
+            self.assertTrue(privacy.inspect('data.yaml', ('image' + '_prompt' + delimiter + ' recipe').encode()))
+
+    def test_marker_case_and_generation_spellings(self):
+        for marker in ['Note: Private' + '_Only', 'Private' + '_Only', 'private' + '-editorial', 'Begin' + ' Private', 'private' + ' editorial']:
+            self.assertTrue(privacy.inspect('data.txt', marker.encode()))
+        self.assertFalse(privacy.inspect('README.md', b'Keep private editorial methods elsewhere.'))
+        self.assertFalse(privacy.inspect('README.md', b'Builds reject private-only files.'))
+        for key in ['negative' + '_prompt', 'generation' + 'Prompt', 'image' + 'Prompt', 'baseStyle' + 'Prompt']:
+            self.assertTrue(privacy.inspect('data.json', json.dumps({key: 'recipe'}).encode()))
+
+    def test_upstream_example_exception_is_exact_and_narrow(self):
+        data = ('image' + '_prompt: dict').encode()
+        baseline = {'example.txt': hashlib.sha256(data).hexdigest()}
+        self.assertFalse(privacy.inspect('example.txt', data, notebook_baseline=baseline))
+        self.assertTrue(privacy.inspect('example.txt', data + b' ', notebook_baseline=baseline))
+        secret = ('PRIVATE' + '_ONLY').encode()
+        baseline = {'example.txt': hashlib.sha256(secret).hexdigest()}
+        self.assertTrue(privacy.inspect('example.txt', secret, notebook_baseline=baseline))
+
     def test_symlink(self):
         self.assertTrue(privacy.inspect('asset.txt', b'elsewhere', '120000'))
 
@@ -125,7 +152,9 @@ class GitChecks(unittest.TestCase):
         self.git('commit', '-qm', 'Historical cleanup')
         self.git('update-ref', 'refs/remotes/origin/main', 'HEAD')
         self.git('commit', '--allow-empty', '-qm', 'New branch')
-        self.assertEqual(self.check('--range', '0' * 40, 'HEAD').returncode, 0)
+        baseline = self.git('merge-base', 'refs/remotes/origin/main', 'HEAD').strip()
+        self.assertEqual(self.check('--range', baseline, 'HEAD').returncode, 0)
+        self.assertEqual(self.check('--range', '0' * 40, 'HEAD').returncode, 1)
         p.write_text('NEW=sample')
         self.git('add', '.')
         self.git('commit', '-qm', 'New disclosure')
@@ -192,6 +221,43 @@ class GitChecks(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('BLOCKED', result.stderr)
         self.assertEqual(self.git('ls-remote', '--refs', target).strip(), '')
+
+    def test_nested_annotated_tags(self):
+        self.git('tag', '-a', 'inner', '-m', 'PRIVATE' + '_ONLY')
+        inner = self.git('rev-parse', 'inner').strip()
+        self.git('tag', '-a', 'outer', 'inner', '-m', 'Public annotation')
+        outer = self.git('rev-parse', 'outer').strip()
+        line = 'refs/tags/outer ' + outer + ' refs/tags/outer ' + '0' * 40 + '\n'
+        result = self.check('--pre-push', 'origin', input_text=line)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(inner[:12], result.stderr)
+        self.assertEqual(self.check('--range', self.base, outer).returncode, 1)
+
+    def test_replace_refs_cannot_hide_published_objects(self):
+        (self.root / 'readme.txt').write_text('PRIVATE' + '_ONLY')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Blocked content')
+        bad = self.git('rev-parse', 'HEAD').strip()
+        self.git('replace', bad, self.base)
+        self.assertEqual(self.check('--range', self.base, bad).returncode, 1)
+        line = 'refs/heads/topic ' + bad + ' refs/heads/topic ' + '0' * 40 + '\n'
+        self.assertEqual(self.check('--pre-push', 'origin', input_text=line).returncode, 1)
+
+    def test_shallow_ancestry_fails_closed(self):
+        shallow = self.root / '.git/shallow'
+        shallow.write_text(self.base + '\n')
+        self.assertEqual(self.check('--range', self.base, 'HEAD').returncode, 2)
+
+    def test_grafts_cannot_hide_intermediate_history(self):
+        p = self.root / '.env.local'
+        p.write_text('SAMPLE=value')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Intermediate')
+        self.git('rm', '-q', '.env.local')
+        self.git('commit', '-qm', 'Cleanup')
+        head = self.git('rev-parse', 'HEAD').strip()
+        (self.root / '.git/info/grafts').write_text(head + '\n')
+        self.assertEqual(self.check('--range', self.base, head).returncode, 2)
 
     def test_commit_message(self):
         self.git('commit', '--allow-empty', '-qm', 'PRIVATE' + '_ONLY')

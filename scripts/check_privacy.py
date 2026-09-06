@@ -3,24 +3,26 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 
 def git(*args):
-    return subprocess.check_output(['git', *args], stderr=subprocess.PIPE, timeout=30)
+    return subprocess.check_output(['git', '--no-replace-objects', *args], stderr=subprocess.PIPE, timeout=30)
 
 
 PATTERNS = [
-    ('private marker', re.compile(rb'PRIVATE[-_ ](?:ONLY|EDITORIAL)|BEGIN[ ]PRIVATE')),
+    ('private marker', re.compile(rb'(?m)PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ]ONLY|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
     ('private key', re.compile(rb'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----')),
     ('AWS access key', re.compile(rb'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b')),
     ('GitHub token', re.compile(rb'\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b')),
     ('provider token', re.compile(rb'\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{30,}\b')),
     ('local user path', re.compile(rb'/(?:Users|home)/[A-Za-z0-9_.-]+/')),
-    ('image authoring field', re.compile(rb'["\x27](?:style_prompt|image_prompt|generation_prompt)["\x27]\s*:', re.I)),
+    ('Windows user path', re.compile(rb'(?:[A-Za-z]:[\\/]+|[\\/]{2}[^\\/]+[\\/]+(?:[^\\/]+[\\/]+)?)(?:Users|home)[\\/]+[^\\/\s]+[\\/]', re.I)),
+    ('image authoring field', re.compile(rb'(?<![A-Za-z0-9_])(?:style[_-]?prompt|image[_-]?prompt|generation[_-]?prompt|negative[_-]?prompt|base[_-]?style[_-]?prompt)["\x27]?\s*[:=]', re.I)),
 ]
 PRIVATE_PARTS = {'.agents', '.agent', '.obsidian', 'transcripts', 'chat-history', 'private-authoring'}
 PRIVATE_NAMES = {'writing-style.md', 'website-editorial-private.md', 'credentials.json'}
@@ -39,7 +41,10 @@ def inspect(name, data, mode='100644', notebook_baseline=None):
         problems.append('environment file')
     if p.suffix in PRIVATE_SUFFIXES:
         problems.append('private or raw artifact type')
+    approved_upstream = (notebook_baseline or {}).get(name) == hashlib.sha256(data).hexdigest()
     for label, pattern in PATTERNS:
+        if label == 'image authoring field' and approved_upstream:
+            continue  # Preserve exact reviewed upstream teaching examples.
         if pattern.search(data):
             problems.append(label)
     if p.suffix == '.ipynb':
@@ -126,13 +131,24 @@ def check_refs(refs):
                 failures += 1
                 print('BLOCKED object ' + oid[:12] + ': ' + ', '.join(problems), file=sys.stderr)
         if ref != ':':
-            message = git('show', '-s', '--format=%B', ref + '^{commit}')
-            if git('cat-file', '-t', ref).strip() == b'tag':
-                message += git('cat-file', 'tag', ref)
-            for label, pattern in PATTERNS:
-                if pattern.search(message):
-                    failures += 1
-                    print('BLOCKED metadata object ' + git('rev-parse', ref).decode().strip()[:12] + ': ' + label, file=sys.stderr)
+            commit = git('rev-parse', ref + '^{commit}').decode().strip()
+            metadata = [(commit, git('show', '-s', '--format=%B', commit))]
+            current = git('rev-parse', ref).decode().strip()
+            visited_tags = set()
+            while git('cat-file', '-t', current).strip() == b'tag':
+                if current in visited_tags or len(visited_tags) >= 1000:
+                    raise ValueError('invalid tag chain')
+                visited_tags.add(current)
+                tag = git('cat-file', 'tag', current)
+                metadata.append((current, tag))
+                current = tag.splitlines()[0].split()[1].decode()
+                if not re.fullmatch(r'[0-9a-f]{40,64}', current):
+                    raise ValueError('invalid tag target')
+            for oid, message in metadata:
+                for label, pattern in PATTERNS:
+                    if pattern.search(message):
+                        failures += 1
+                        print('BLOCKED metadata object ' + oid[:12] + ': ' + label, file=sys.stderr)
     if failures:
         print('Inspect flagged objects locally. Do not paste their contents into public issues or logs.', file=sys.stderr)
         return 1
@@ -142,8 +158,6 @@ def check_refs(refs):
 
 def outgoing(base, head):
     git('rev-parse', '--verify', head + '^{commit}')
-    if base and set(base) == {'0'}:
-        base = git('merge-base', 'refs/remotes/origin/main', head).decode().strip()
     args = ['rev-list', '--reverse', head]
     if base and set(base) != {'0'}:
         git('rev-parse', '--verify', base + '^{commit}')
@@ -159,6 +173,12 @@ def main():
     group.add_argument('--range', nargs=2, metavar=('BASE', 'HEAD'))
     group.add_argument('--pre-push', metavar='REMOTE')
     args = parser.parse_args()
+    if (args.range or args.pre_push) and git('rev-parse', '--is-shallow-repository').strip() == b'true':
+        raise ValueError('fetch complete ancestry before an outgoing scan')
+    if args.range or args.pre_push:
+        grafts = Path(os.environ.get('GIT_GRAFT_FILE') or git('rev-parse', '--git-path', 'info/grafts').decode().strip())
+        if grafts.exists() and grafts.stat().st_size:
+            raise ValueError('remove local grafts before an outgoing scan')
     if args.staged:
         refs = [':']
     elif args.head:

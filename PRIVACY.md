@@ -33,7 +33,7 @@ are visible before merge; CI only provides a second check.
 
 The shared checker rejects known private paths, environment files other than a
 reviewed example, raw artifacts, symlinks, submodules, selected credential formats,
-private markers, image-authoring fields, local user paths, and saved notebook
+explicit private markers, image-authoring fields, local user paths, and saved notebook
 execution output. It scans Git blobs and commit messages and reports categories
 and object IDs without printing matched content. Keep environment examples free
 of real values. Generic application prompts are allowed.
@@ -44,7 +44,8 @@ configuration cannot grant exceptions. These are compatibility exceptions, not
 proof that upstream output is confidential-data-free. Any changed notebook must
 clear outputs and execution counts; changing the pinned upstream revision needs
 explicit code review. A shallow fork clone must fetch that revision to retain the
-legacy examples. Other repositories receive no notebook-output exemptions.
+legacy examples, including their intentional image-prompt field names. Credential
+and explicit private-marker checks still apply to those files.
 
 The scanner is a targeted safeguard, not a full secret scanner or a guarantee of
 confidentiality. Review facts, attachments, screenshots, image metadata, comments,
