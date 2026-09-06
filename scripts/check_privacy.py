@@ -16,28 +16,29 @@ def git(*args):
 
 
 PATTERNS = [
-    ('private marker', re.compile(rb'(?m)\bPRIVATE[ _-]+(?:ONLY|EDITORIAL)[ \t]*(?=[^A-Za-z\s]|$)|(?-i:PRIVATE[ ](?:ONLY|EDITORIAL))|PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ](?:ONLY|EDITORIAL)(?=[:;.!]|\b[ \t]*$)|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
+    ('private marker', re.compile(rb'(?m)\bPRIVATE[ _-]+(?:ONLY|EDITORIAL)[ \t]*(?=[^A-Za-z\s]|$)|(?-i:PRIVATE[ ](?:ONLY|EDITORIAL))|PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ](?:ONLY|EDITORIAL)(?=[:;.!]|\b[ \t]*$|[ \t]+(?:do[ ]not[ ]publish|confidential|internal)\b)|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
     ('private key', re.compile(rb'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----')),
     ('AWS access key', re.compile(rb'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b')),
     ('GitHub token', re.compile(rb'\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b')),
     ('provider token', re.compile(rb'\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{30,}\b')),
-    ('root home path', re.compile(rb'/root(?=/|$)')),
+    ('root home path', re.compile(rb'/' rb'root(?=$|[/\\\s"\x27.,;:)\]}])')),
     ('local user path', re.compile(rb'/(?:Users|home)/[^/\r\n]+')),
     ('Windows user path', re.compile(rb'(?:[A-Za-z]:[\\/]+|[\\/]{2}[^\\/]+[\\/]+(?:[^\\/]+[\\/]+)?)(?:Users|home)[\\/]+[^\\/\r\n]+', re.I)),
     ('image authoring field', re.compile(rb'(?<![A-Za-z0-9_])(?:style[_-]?prompt|image[_-]?prompt|generation[_-]?prompt|negative[_-]?prompt|base[_-]?style[_-]?prompt)["\x27]?\s*[:=]', re.I)),
 ]
-PRIVATE_PARTS = {'logs', '.venv', 'venv', '__pycache__', '.direnv', '.agents', '.agent', '.obsidian', 'transcripts', 'chat-history', 'private-authoring'}
+PRIVATE_PARTS = {'env', '.env', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.ipynb_checkpoints', 'logs', '.venv', 'venv', '__pycache__', '.direnv', '.agents', '.agent', '.obsidian', 'transcripts', 'chat-history', 'private-authoring'}
 PRIVATE_NAMES = {'writing-style.md', 'website-editorial-private.md', 'credentials.json'}
-PRIVATE_SUFFIXES = {'.pem', '.key', '.p12', '.pfx', '.har', '.log', '.sqlite', '.sqlite3', '.psd', '.xcf'}
+PRIVATE_SUFFIXES = {'.pyc', '.pyo', '.pyd', '.pem', '.key', '.p12', '.pfx', '.har', '.log', '.sqlite', '.sqlite3', '.psd', '.xcf'}
 
 
 def normalize_bom(data):
     for bom, encoding in [(codecs.BOM_UTF32_LE, 'utf-32'), (codecs.BOM_UTF32_BE, 'utf-32'),
                           (codecs.BOM_UTF16_LE, 'utf-16'), (codecs.BOM_UTF16_BE, 'utf-16')]:
         if data.startswith(bom):
-            return data.decode(encoding).encode('utf-8')
+            data = data.decode(encoding).encode('utf-8')
+            break
     # Preserve ASCII markers in BOM-less UTF-16/32 as well as raw bytes.
-    return data.replace(b'\x00', b'')
+    return data.replace(b'\x00', b'').replace(bytes([92, 47]), b'/')
 
 
 def inspect(name, data, mode='100644', notebook_baseline=None):

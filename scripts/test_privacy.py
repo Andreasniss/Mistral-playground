@@ -38,9 +38,12 @@ class ContentChecks(unittest.TestCase):
     def test_private_paths(self):
         self.assertTrue(privacy.inspect('.' + 'agents/guide.md', b''))
         self.assertTrue(privacy.inspect('.direnv/environment', b'Neutral body'))
-        for folder in ['logs', '.venv', 'venv', '__pycache__']:
+        for folder in ['logs', '.venv', 'venv', 'env', 'ENV', '.env', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', '.ipynb_checkpoints']:
             self.assertTrue(privacy.inspect(folder + '/data.txt', b'Neutral body'))
         self.assertTrue(privacy.inspect('notes/' + 'writing' + '-style.md', b''))
+
+        for suffix in ['.pyc', '.pyo', '.pyd']:
+            self.assertTrue(privacy.inspect('module' + suffix, b'Neutral body'))
 
     def test_secrets_and_private_markers(self):
         for value in [b'AK' + b'IA' + b'Z' * 16, b'gh' + b'p_' + b'Z' * 40,
@@ -71,13 +74,15 @@ class ContentChecks(unittest.TestCase):
     def test_home_directory_without_child(self):
         for path in ['/ro' + 'ot/project/file', '/ho' + 'me/alice', '/ho' + 'me/andré/file', '/ho' + 'me/李/file', '/Us' + 'ers/Élodie/file', '/Us' + 'ers/Jane Doe/file', '/Us' + 'ers/alice', 'C:' + chr(92) + 'Users' + chr(92) + 'alice']:
             self.assertTrue(privacy.inspect('data.txt', path.encode()))
+        for value in ['{\"cwd\":\"/ro' + 'ot\"}', '/ro' + 'ot\nnext', chr(92) + '/ro' + 'ot' + chr(92) + '/project']:
+            self.assertTrue(privacy.inspect('data.txt', value.encode()))
 
     def test_unquoted_authoring_fields(self):
         for delimiter in [':', '=']:
             self.assertTrue(privacy.inspect('data.yaml', ('image' + '_prompt' + delimiter + ' recipe').encode()))
 
     def test_marker_case_and_generation_spellings(self):
-        for marker in ['Note: Private' + '_Only', 'Private' + '_Only', 'private' + '-editorial', 'Begin' + ' Private', 'private' + ' editorial', 'Private' + ' Editorial:', 'NOTE: PRIVATE' + ' ONLY: do not publish', 'Note: Private' + '-Only: do not publish', 'Note: private' + '-only: do not publish', 'NOTE: PRIVATE' + ' ONLY. do not publish', 'NOTE: PRIVATE' + ' EDITORIAL. do not publish', 'NOTE: PRIVATE' + ' EDITORIAL: do not publish', '<!-- Private' + ' Editorial: do not publish -->']:
+        for marker in ['Note: Private' + '_Only', 'Private' + '_Only', 'private' + '-editorial', 'Begin' + ' Private', 'private' + ' editorial', 'Private' + ' Editorial:', 'Private' + ' Editorial do not publish', 'NOTE: PRIVATE' + ' ONLY: do not publish', 'Note: Private' + '-Only: do not publish', 'Note: private' + '-only: do not publish', 'NOTE: PRIVATE' + ' ONLY. do not publish', 'NOTE: PRIVATE' + ' EDITORIAL. do not publish', 'NOTE: PRIVATE' + ' EDITORIAL: do not publish', '<!-- Private' + ' Editorial: do not publish -->']:
             self.assertTrue(privacy.inspect('data.txt', marker.encode()))
         self.assertFalse(privacy.inspect('README.md', b'Keep private editorial methods elsewhere.'))
         self.assertFalse(privacy.inspect('README.md', b'Builds reject private-only files.'))
