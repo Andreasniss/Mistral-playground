@@ -49,14 +49,14 @@ def inspect(name, data, mode='100644', notebook_baseline=None):
     except UnicodeError:
         scan_data = data
         problems.append('invalid encoded text')
-    p = PurePosixPath(name.lower())
+    p = PurePosixPath(name.lower().rstrip('~'))
     if mode not in ('100644', '100755'):
         problems.append('symlink, submodule, or unresolved index entry')
     if any(part in PRIVATE_PARTS for part in p.parts) or p.name in PRIVATE_NAMES:
         problems.append('private authoring path')
     if p.name == '.envrc' or p.name.startswith('.envrc.') or p.name == '.env' or (p.name.startswith('.env.') and p.name != '.env.example'):
         problems.append('environment file')
-    if p.suffix in PRIVATE_SUFFIXES:
+    if any(suffix in PRIVATE_SUFFIXES for suffix in p.suffixes):
         problems.append('private or raw artifact type')
     if re.search(r'private[ _-]+(?:only|editorial)|begin[ ]private', name, re.I):
         problems.append('private label in path')

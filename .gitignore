@@ -45,3 +45,7 @@ transcripts/
 .envrc
 .envrc.*
 .direnv/
+
+# Editor backups and rotated runtime logs
+*~
+*.log.*

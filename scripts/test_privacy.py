@@ -31,7 +31,7 @@ class ContentChecks(unittest.TestCase):
         self.assertTrue(privacy.inspect('note.txt', 'public'.encode('utf-16') + b'PRIVATE' + b'_ONLY'))
 
     def test_environment_variants(self):
-        for name in ['.env', '.env.local', '.env.production', '.envrc', '.envrc.local']:
+        for name in ['.env', '.env.local', '.env.production', '.envrc', '.envrc.local', '.env~', '.envrc~', '.env.local~']:
             self.assertTrue(privacy.inspect(name, b''))
         self.assertFalse(privacy.inspect('.env.example', b'API_KEY='))
 
@@ -42,7 +42,7 @@ class ContentChecks(unittest.TestCase):
             self.assertTrue(privacy.inspect(folder + '/data.txt', b'Neutral body'))
         self.assertTrue(privacy.inspect('notes/' + 'writing' + '-style.md', b''))
 
-        for suffix in ['.pyc', '.pyo', '.pyd']:
+        for suffix in ['.pyc', '.pyo', '.pyd', '.log.1', '.log.gz', '.log.2.gz']:
             self.assertTrue(privacy.inspect('module' + suffix, b'Neutral body'))
 
     def test_secrets_and_private_markers(self):
