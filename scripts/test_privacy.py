@@ -53,6 +53,8 @@ class ContentChecks(unittest.TestCase):
             data = ('-----BEGIN ' + prefix + ' PRIVATE' + ' KEY-----').encode()
             self.assertTrue(privacy.inspect('neutral.txt', data))
 
+        self.assertTrue(privacy.inspect('key.asc', ('-----BEGIN PGP' + ' PRIVATE KEY BLOCK-----').encode()))
+
     def test_widget_state(self):
         data = json.dumps({'nbformat': 4, 'nbformat_minor': 0, 'cells': [], 'metadata': {'widgets': {'state': 'result'}}}).encode()
         self.assertTrue(privacy.inspect('demo.ipynb', data))
@@ -67,7 +69,7 @@ class ContentChecks(unittest.TestCase):
             self.assertTrue(privacy.inspect('data.json', json.dumps(spaced).encode()))
 
     def test_home_directory_without_child(self):
-        for path in ['/ho' + 'me/alice', '/ho' + 'me/andré/file', '/ho' + 'me/李/file', '/Us' + 'ers/Élodie/file', '/Us' + 'ers/Jane Doe/file', '/Us' + 'ers/alice', 'C:' + chr(92) + 'Users' + chr(92) + 'alice']:
+        for path in ['/ro' + 'ot/project/file', '/ho' + 'me/alice', '/ho' + 'me/andré/file', '/ho' + 'me/李/file', '/Us' + 'ers/Élodie/file', '/Us' + 'ers/Jane Doe/file', '/Us' + 'ers/alice', 'C:' + chr(92) + 'Users' + chr(92) + 'alice']:
             self.assertTrue(privacy.inspect('data.txt', path.encode()))
 
     def test_unquoted_authoring_fields(self):
@@ -83,7 +85,7 @@ class ContentChecks(unittest.TestCase):
             self.assertTrue(privacy.inspect('data.json', json.dumps({key: 'recipe'}).encode()))
 
     def test_upstream_example_exception_is_exact_and_narrow(self):
-        data = ('image' + '_prompt: dict').encode()
+        data = ('image' + '_prompt: dict\n' + '/ro' + 'ot/.cache/pip').encode()
         baseline = {'example.txt': hashlib.sha256(data).hexdigest()}
         self.assertFalse(privacy.inspect('example.txt', data, notebook_baseline=baseline))
         self.assertTrue(privacy.inspect('example.txt', data + b' ', notebook_baseline=baseline))
@@ -336,6 +338,15 @@ class GitChecks(unittest.TestCase):
             oid = subprocess.check_output(['git', 'hash-object', '-t', 'commit', '-w', '--stdin'],
                                           cwd=self.root, env=self.env, input=raw).decode().strip()
             self.assertNotEqual(self.check('--range', self.base, oid).returncode, 0)
+
+    def test_nul_interleaved_commit_message(self):
+        tree = self.git('rev-parse', 'HEAD^{tree}').strip()
+        header = ('tree ' + tree + '\nparent ' + self.base +
+                  '\nauthor Test <test@example.invalid> 1 +0000\ncommitter Test <test@example.invalid> 1 +0000\n\n').encode()
+        raw = header + ('PRIVATE' + '_ONLY').encode('utf-16-le')
+        oid = subprocess.check_output(['git', 'hash-object', '--literally', '-t', 'commit', '-w', '--stdin'],
+                                      cwd=self.root, env=self.env, input=raw).decode().strip()
+        self.assertNotEqual(self.check('--range', self.base, oid).returncode, 0)
 
     def test_commit_message_ignores_display_encoding(self):
         self.git('commit', '--allow-empty', '-qm', 'PRIVATE' + '_ONLY')

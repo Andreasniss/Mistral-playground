@@ -17,10 +17,11 @@ def git(*args):
 
 PATTERNS = [
     ('private marker', re.compile(rb'(?m)\bPRIVATE[ _-]+(?:ONLY|EDITORIAL)[ \t]*(?=[^A-Za-z\s]|$)|(?-i:PRIVATE[ ](?:ONLY|EDITORIAL))|PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ](?:ONLY|EDITORIAL)(?=[:;.!]|\b[ \t]*$)|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
-    ('private key', re.compile(rb'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----')),
+    ('private key', re.compile(rb'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----')),
     ('AWS access key', re.compile(rb'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b')),
     ('GitHub token', re.compile(rb'\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b')),
     ('provider token', re.compile(rb'\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{30,}\b')),
+    ('root home path', re.compile(rb'/root(?=/|$)')),
     ('local user path', re.compile(rb'/(?:Users|home)/[^/\r\n]+')),
     ('Windows user path', re.compile(rb'(?:[A-Za-z]:[\\/]+|[\\/]{2}[^\\/]+[\\/]+(?:[^\\/]+[\\/]+)?)(?:Users|home)[\\/]+[^\\/\r\n]+', re.I)),
     ('image authoring field', re.compile(rb'(?<![A-Za-z0-9_])(?:style[_-]?prompt|image[_-]?prompt|generation[_-]?prompt|negative[_-]?prompt|base[_-]?style[_-]?prompt)["\x27]?\s*[:=]', re.I)),
@@ -63,7 +64,7 @@ def inspect(name, data, mode='100644', notebook_baseline=None):
             problems.append(label + ' in path')
     approved_upstream = (notebook_baseline or {}).get(name) == hashlib.sha256(data).hexdigest()
     for label, pattern in PATTERNS:
-        if label == 'image authoring field' and approved_upstream:
+        if label in ('image authoring field', 'root home path') and approved_upstream:
             continue  # Preserve exact reviewed upstream teaching examples.
         if pattern.search(scan_data):
             problems.append(label)
@@ -160,7 +161,7 @@ def check_refs(refs):
             encodings = [line[9:].decode('ascii') for line in headers.splitlines() if line.startswith(b'encoding ')]
             if len(encodings) > 1:
                 raise ValueError('ambiguous commit encoding')
-            normalized = message.decode(encodings[0] if encodings else 'utf-8').encode('utf-8')
+            normalized = normalize_bom(message.decode(encodings[0] if encodings else 'utf-8').encode('utf-8'))
             metadata = [(commit, raw_commit + b'\n' + normalized)]
             current = git('rev-parse', ref).decode().strip()
             visited_tags = set()
