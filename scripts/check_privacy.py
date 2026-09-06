@@ -25,7 +25,7 @@ PATTERNS = [
     ('Windows user path', re.compile(rb'(?:[A-Za-z]:[\\/]+|[\\/]{2}[^\\/]+[\\/]+(?:[^\\/]+[\\/]+)?)(?:Users|home)[\\/]+[^\\/\r\n]+', re.I)),
     ('image authoring field', re.compile(rb'(?<![A-Za-z0-9_])(?:style[_-]?prompt|image[_-]?prompt|generation[_-]?prompt|negative[_-]?prompt|base[_-]?style[_-]?prompt)["\x27]?\s*[:=]', re.I)),
 ]
-PRIVATE_PARTS = {'.direnv', '.agents', '.agent', '.obsidian', 'transcripts', 'chat-history', 'private-authoring'}
+PRIVATE_PARTS = {'logs', '.venv', 'venv', '__pycache__', '.direnv', '.agents', '.agent', '.obsidian', 'transcripts', 'chat-history', 'private-authoring'}
 PRIVATE_NAMES = {'writing-style.md', 'website-editorial-private.md', 'credentials.json'}
 PRIVATE_SUFFIXES = {'.pem', '.key', '.p12', '.pfx', '.har', '.log', '.sqlite', '.sqlite3', '.psd', '.xcf'}
 
@@ -35,7 +35,8 @@ def normalize_bom(data):
                           (codecs.BOM_UTF16_LE, 'utf-16'), (codecs.BOM_UTF16_BE, 'utf-16')]:
         if data.startswith(bom):
             return data.decode(encoding).encode('utf-8')
-    return data
+    # Preserve ASCII markers in BOM-less UTF-16/32 as well as raw bytes.
+    return data.replace(b'\x00', b'')
 
 
 def inspect(name, data, mode='100644', notebook_baseline=None):
@@ -153,6 +154,9 @@ def check_refs(refs):
             commit = git('rev-parse', ref + '^{commit}').decode().strip()
             raw_commit = git('cat-file', 'commit', commit)
             headers, message = raw_commit.split(b'\n\n', 1)
+            headers.decode('utf-8')
+            if b'\x00' in headers:
+                raise ValueError('invalid commit header text')
             encodings = [line[9:].decode('ascii') for line in headers.splitlines() if line.startswith(b'encoding ')]
             if len(encodings) > 1:
                 raise ValueError('ambiguous commit encoding')
@@ -165,7 +169,10 @@ def check_refs(refs):
                     raise ValueError('invalid tag chain')
                 visited_tags.add(current)
                 tag = git('cat-file', 'tag', current)
-                annotation = tag.split(b'\n\n', 1)[1]
+                tag_headers, annotation = tag.split(b'\n\n', 1)
+                tag_headers.decode('utf-8')
+                if b'\x00' in tag_headers:
+                    raise ValueError('invalid tag header text')
                 metadata.append((current, tag + b'\n' + normalize_bom(annotation).decode('utf-8').encode('utf-8')))
                 current = tag.splitlines()[0].split()[1].decode()
                 if not re.fullmatch(r'[0-9a-f]{40,64}', current):

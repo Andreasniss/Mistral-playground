@@ -23,7 +23,7 @@ class ContentChecks(unittest.TestCase):
             self.assertTrue(privacy.inspect(name, b'Neutral body'))
 
     def test_bom_encoded_private_text(self):
-        for encoding in ['utf-16', 'utf-32']:
+        for encoding in ['utf-16', 'utf-32', 'utf-16-le', 'utf-16-be', 'utf-32-le', 'utf-32-be']:
             for text in ['PRIVATE' + '_ONLY', 'image' + '_prompt: recipe']:
                 self.assertTrue(privacy.inspect('note.txt', text.encode(encoding)))
 
@@ -38,6 +38,8 @@ class ContentChecks(unittest.TestCase):
     def test_private_paths(self):
         self.assertTrue(privacy.inspect('.' + 'agents/guide.md', b''))
         self.assertTrue(privacy.inspect('.direnv/environment', b'Neutral body'))
+        for folder in ['logs', '.venv', 'venv', '__pycache__']:
+            self.assertTrue(privacy.inspect(folder + '/data.txt', b'Neutral body'))
         self.assertTrue(privacy.inspect('notes/' + 'writing' + '-style.md', b''))
 
     def test_secrets_and_private_markers(self):
@@ -219,7 +221,7 @@ class GitChecks(unittest.TestCase):
         self.assertIn(self.git('rev-parse', 'release').strip()[:12], result.stderr)
 
     def test_bom_encoded_tag_annotation(self):
-        for encoding in ['utf-16', 'utf-32']:
+        for encoding in ['utf-16', 'utf-32', 'utf-16-le', 'utf-16-be', 'utf-32-le', 'utf-32-be']:
             annotation = Path(self.temp.name) / 'annotation.txt'
             annotation.write_bytes(('PRIVATE' + '_ONLY').encode(encoding))
             self.git('tag', '-fa', 'encoded', '-F', str(annotation))
@@ -242,6 +244,13 @@ class GitChecks(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertNotIn(name, result.stderr)
             self.assertEqual(self.check('--head', '--ref-name', 'refs/heads/' + name).returncode, 1)
+
+    def test_unsupported_tag_header_encoding(self):
+        prefix = ('object ' + self.base + '\ntype commit\ntag sample\ntagger ').encode()
+        raw = prefix + ('PRIVATE' + '_ONLY').encode('cp037') + b' <test@example.invalid> 1 +0000\n\nPublic annotation\n'
+        oid = subprocess.check_output(['git', 'hash-object', '-t', 'tag', '-w', '--stdin'],
+                                      cwd=self.root, env=self.env, input=raw).decode().strip()
+        self.assertNotEqual(self.check('--range', self.base, oid).returncode, 0)
 
     def test_updated_annotated_tag(self):
         self.git('tag', '-a', 'v1', '-m', 'Public version')
