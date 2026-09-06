@@ -168,6 +168,31 @@ class GitChecks(unittest.TestCase):
         self.assertEqual(self.check('--range', old, tag).returncode, 1)
         self.assertNotIn('PRIVATE' + '_ONLY', result.stderr)
 
+    def test_hook_uses_push_destination_not_fetch_remote(self):
+        p = self.root / '.env.local'
+        p.write_text('SAMPLE=value')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'Intermediate')
+        self.git('rm', '-q', '.env.local')
+        self.git('commit', '-qm', 'Cleanup')
+        self.git('push', '-q', 'origin', 'HEAD:refs/heads/existing')
+        target = str(Path(self.temp.name) / 'destination.git')
+        self.git('init', '--bare', '-q', target)
+        self.git('remote', 'set-url', '--push', 'origin', target)
+        (self.root / 'scripts').mkdir()
+        (self.root / 'scripts/check_privacy.py').write_bytes(SCRIPT.read_bytes())
+        hooks = self.root / 'hooks'
+        hooks.mkdir()
+        hook = hooks / 'pre-push'
+        hook.write_bytes(SCRIPT.parent.parent.joinpath('.githooks/pre-push').read_bytes())
+        hook.chmod(0o755)
+        self.git('config', 'core.hooksPath', str(hooks))
+        result = subprocess.run(['git', 'push', 'origin', 'HEAD:refs/heads/topic'],
+                                cwd=self.root, env=self.env, text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('BLOCKED', result.stderr)
+        self.assertEqual(self.git('ls-remote', '--refs', target).strip(), '')
+
     def test_commit_message(self):
         self.git('commit', '--allow-empty', '-qm', 'PRIVATE' + '_ONLY')
         self.assertEqual(self.check('--range', self.base, 'HEAD').returncode, 1)
