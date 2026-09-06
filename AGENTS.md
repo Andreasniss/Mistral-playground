@@ -92,3 +92,7 @@ change. `requirements.txt` remains as a simple pip-compatible entry point.
 - Keep public claims tied to code or automated evidence.
 - Document production gaps in `SECURITY.md`; do not silently broaden this demo's
   security or reliability claims.
+
+## Before public uploads
+
+Follow `PRIVACY.md`. Run the staged and outgoing-commit privacy checks before any Git push or API-based commit upload. Public PRs are already public; passing CI cannot undo a disclosure.

@@ -170,3 +170,7 @@ Andreas Nissen owns the project intent, architecture, requirements, evaluation c
 This is a personal project. Views and opinions are Andreas's own and do not represent his employer.
 
 Built by [Andreas Nissen](https://github.com/Andreasniss). See [andreasnissen.dev](https://andreasnissen.dev) and [connect on LinkedIn](https://www.linkedin.com/in/andreasnissen). Licensed under Apache 2.0.
+
+## Contributing safely
+
+Read [the publication privacy boundary](PRIVACY.md) and install the local Git hooks before uploading changes. Private authoring stays outside public branches and PRs; intentional demo prompts and reviewed engineering evidence remain public.

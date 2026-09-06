@@ -34,6 +34,8 @@ In-flight and backlog items for this repo.
 
 ## Done
 
+- [x] Publication privacy checks, optional Git hooks, notebook output cleanup, environment-file exclusions, and pinned CI Actions; local privacy tests, lint, 37 application tests, and six deterministic evaluations passed.
+
 - [x] Public project identity synchronization — renamed the product, application, API, notebook, and package surfaces to Agent Reliability Lab while retaining the Mistral-playground repository slug and Mistral and Ollama as explicit supported providers
 - [x] Evidence-led repository handoff — dated verified gate snapshot, reciprocal companion-article links, and explicit human ownership and AI-assistance disclosure
 - [x] Dependency security gate — export the locked runtime set and fail CI on known
