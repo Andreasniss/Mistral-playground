@@ -73,7 +73,7 @@ class ContentChecks(unittest.TestCase):
             self.assertTrue(privacy.inspect('data.yaml', ('image' + '_prompt' + delimiter + ' recipe').encode()))
 
     def test_marker_case_and_generation_spellings(self):
-        for marker in ['Note: Private' + '_Only', 'Private' + '_Only', 'private' + '-editorial', 'Begin' + ' Private', 'private' + ' editorial', 'Private' + ' Editorial:', 'NOTE: PRIVATE' + ' ONLY: do not publish', 'NOTE: PRIVATE' + ' ONLY. do not publish', 'NOTE: PRIVATE' + ' EDITORIAL. do not publish', 'NOTE: PRIVATE' + ' EDITORIAL: do not publish', '<!-- Private' + ' Editorial: do not publish -->']:
+        for marker in ['Note: Private' + '_Only', 'Private' + '_Only', 'private' + '-editorial', 'Begin' + ' Private', 'private' + ' editorial', 'Private' + ' Editorial:', 'NOTE: PRIVATE' + ' ONLY: do not publish', 'Note: Private' + '-Only: do not publish', 'Note: private' + '-only: do not publish', 'NOTE: PRIVATE' + ' ONLY. do not publish', 'NOTE: PRIVATE' + ' EDITORIAL. do not publish', 'NOTE: PRIVATE' + ' EDITORIAL: do not publish', '<!-- Private' + ' Editorial: do not publish -->']:
             self.assertTrue(privacy.inspect('data.txt', marker.encode()))
         self.assertFalse(privacy.inspect('README.md', b'Keep private editorial methods elsewhere.'))
         self.assertFalse(privacy.inspect('README.md', b'Builds reject private-only files.'))
@@ -227,6 +227,21 @@ class GitChecks(unittest.TestCase):
             self.assertNotEqual(self.check('--range', self.base, oid).returncode, 0)
             line = 'refs/tags/encoded ' + oid + ' refs/tags/encoded ' + '0' * 40 + '\n'
             self.assertNotEqual(self.check('--pre-push', 'origin', input_text=line).returncode, 0)
+
+    def test_unknown_tag_encoding_fails_closed(self):
+        annotation = Path(self.temp.name) / 'annotation.txt'
+        annotation.write_bytes(('PRIVATE' + '_ONLY').encode('cp037'))
+        self.git('tag', '-a', 'encoded', '-F', str(annotation))
+        oid = self.git('rev-parse', 'encoded').strip()
+        self.assertNotEqual(self.check('--range', self.base, oid).returncode, 0)
+
+    def test_sensitive_destination_ref(self):
+        for name in ['PRIVATE' + '_ONLY-client', 'gh' + 'p_' + 'Z' * 40]:
+            line = 'refs/heads/topic ' + self.base + ' refs/heads/' + name + ' ' + '0' * 40 + '\n'
+            result = self.check('--pre-push', 'origin', input_text=line)
+            self.assertEqual(result.returncode, 1)
+            self.assertNotIn(name, result.stderr)
+            self.assertEqual(self.check('--head', '--ref-name', 'refs/heads/' + name).returncode, 1)
 
     def test_updated_annotated_tag(self):
         self.git('tag', '-a', 'v1', '-m', 'Public version')

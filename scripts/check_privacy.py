@@ -16,7 +16,7 @@ def git(*args):
 
 
 PATTERNS = [
-    ('private marker', re.compile(rb'(?m)\bPRIVATE[ ](?:ONLY|EDITORIAL)[ \t]*(?=[^A-Za-z\s]|$)|(?-i:PRIVATE[ ](?:ONLY|EDITORIAL))|PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ](?:ONLY|EDITORIAL)(?=[:;.!]|\b[ \t]*$)|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
+    ('private marker', re.compile(rb'(?m)\bPRIVATE[ _-]+(?:ONLY|EDITORIAL)[ \t]*(?=[^A-Za-z\s]|$)|(?-i:PRIVATE[ ](?:ONLY|EDITORIAL))|PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ](?:ONLY|EDITORIAL)(?=[:;.!]|\b[ \t]*$)|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
     ('private key', re.compile(rb'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----')),
     ('AWS access key', re.compile(rb'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b')),
     ('GitHub token', re.compile(rb'\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b')),
@@ -166,7 +166,7 @@ def check_refs(refs):
                 visited_tags.add(current)
                 tag = git('cat-file', 'tag', current)
                 annotation = tag.split(b'\n\n', 1)[1]
-                metadata.append((current, tag + b'\n' + normalize_bom(annotation)))
+                metadata.append((current, tag + b'\n' + normalize_bom(annotation).decode('utf-8').encode('utf-8')))
                 current = tag.splitlines()[0].split()[1].decode()
                 if not re.fullmatch(r'[0-9a-f]{40,64}', current):
                     raise ValueError('invalid tag target')
@@ -191,14 +191,25 @@ def outgoing(base, head):
     return list(dict.fromkeys(git(*args).decode().splitlines() + [head]))
 
 
+def ref_problems(name):
+    labels = [label for label, pattern in PATTERNS if pattern.search(name.encode('utf-8'))]
+    if re.search(r'private[ _-]+(?:only|editorial)|begin[ ]private', name, re.I):
+        labels.append('private label')
+    return labels
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--ref-name')
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--staged', action='store_true')
     group.add_argument('--head', action='store_true')
     group.add_argument('--range', nargs=2, metavar=('BASE', 'HEAD'))
     group.add_argument('--pre-push', metavar='REMOTE')
     args = parser.parse_args()
+    if args.ref_name and ref_problems(args.ref_name):
+        print('BLOCKED destination ref: ' + ', '.join(ref_problems(args.ref_name)), file=sys.stderr)
+        return 1
     if (args.range or args.pre_push) and git('rev-parse', '--is-shallow-repository').strip() == b'true':
         raise ValueError('fetch complete ancestry before an outgoing scan')
     if args.range or args.pre_push:
@@ -217,6 +228,10 @@ def main():
             local_ref, local_oid, remote_ref, remote_oid = line.split()
             if set(local_oid) == {'0'}:
                 continue
+            ref_labels = ref_problems(remote_ref)
+            if ref_labels:
+                print('BLOCKED destination ref: ' + ', '.join(ref_labels), file=sys.stderr)
+                return 1
             if set(remote_oid) == {'0'}:
                 # Trust the destination's live advertisement, never stale tracking refs.
                 exclusions = []
