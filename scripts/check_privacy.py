@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check Git objects before public upload. No third-party dependencies; pre-push confirms destination refs."""
 import argparse
+import codecs
 import hashlib
 import json
 import os
@@ -15,7 +16,7 @@ def git(*args):
 
 
 PATTERNS = [
-    ('private marker', re.compile(rb'(?m)PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ](?:ONLY|EDITORIAL)(?=[:;.!]|\b[ \t]*$)|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
+    ('private marker', re.compile(rb'(?m)\bPRIVATE[ ](?:ONLY|EDITORIAL)[ \t]*[:;!]|PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ](?:ONLY|EDITORIAL)(?=[:;.!]|\b[ \t]*$)|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
     ('private key', re.compile(rb'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----')),
     ('AWS access key', re.compile(rb'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b')),
     ('GitHub token', re.compile(rb'\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b')),
@@ -32,15 +33,26 @@ PRIVATE_SUFFIXES = {'.pem', '.key', '.p12', '.pfx', '.har', '.log', '.sqlite', '
 def inspect(name, data, mode='100644', notebook_baseline=None):
     """Return categories only, never matching contents."""
     problems = []
+    scan_data = data
+    for bom, encoding in [(codecs.BOM_UTF32_LE, 'utf-32'), (codecs.BOM_UTF32_BE, 'utf-32'),
+                          (codecs.BOM_UTF16_LE, 'utf-16'), (codecs.BOM_UTF16_BE, 'utf-16')]:
+        if data.startswith(bom):
+            try:
+                scan_data = data.decode(encoding).encode('utf-8')
+            except UnicodeError:
+                problems.append('invalid encoded text')
+            break
     p = PurePosixPath(name.lower())
     if mode not in ('100644', '100755'):
         problems.append('symlink, submodule, or unresolved index entry')
     if any(part in PRIVATE_PARTS for part in p.parts) or p.name in PRIVATE_NAMES:
         problems.append('private authoring path')
-    if p.name == '.env' or (p.name.startswith('.env.') and p.name != '.env.example'):
+    if p.name == '.envrc' or p.name.startswith('.envrc.') or p.name == '.env' or (p.name.startswith('.env.') and p.name != '.env.example'):
         problems.append('environment file')
     if p.suffix in PRIVATE_SUFFIXES:
         problems.append('private or raw artifact type')
+    if re.search(r'private[ _-]+(?:only|editorial)|begin[ ]private', name, re.I):
+        problems.append('private label in path')
     for label, pattern in PATTERNS:
         if pattern.search(name.encode('utf-8', 'surrogateescape')):
             problems.append(label + ' in path')
@@ -48,7 +60,7 @@ def inspect(name, data, mode='100644', notebook_baseline=None):
     for label, pattern in PATTERNS:
         if label == 'image authoring field' and approved_upstream:
             continue  # Preserve exact reviewed upstream teaching examples.
-        if pattern.search(data):
+        if pattern.search(scan_data):
             problems.append(label)
     if p.suffix == '.ipynb':
         try:
@@ -135,7 +147,13 @@ def check_refs(refs):
                 print('BLOCKED object ' + oid[:12] + ': ' + ', '.join(problems), file=sys.stderr)
         if ref != ':':
             commit = git('rev-parse', ref + '^{commit}').decode().strip()
-            metadata = [(commit, git('cat-file', 'commit', commit))]
+            raw_commit = git('cat-file', 'commit', commit)
+            headers, message = raw_commit.split(b'\n\n', 1)
+            encodings = [line[9:].decode('ascii') for line in headers.splitlines() if line.startswith(b'encoding ')]
+            if len(encodings) > 1:
+                raise ValueError('ambiguous commit encoding')
+            normalized = message.decode(encodings[0] if encodings else 'utf-8').encode('utf-8')
+            metadata = [(commit, raw_commit + b'\n' + normalized)]
             current = git('rev-parse', ref).decode().strip()
             visited_tags = set()
             while git('cat-file', '-t', current).strip() == b'tag':
@@ -216,6 +234,6 @@ def main():
 if __name__ == '__main__':
     try:
         sys.exit(main())
-    except (subprocess.SubprocessError, ValueError, OSError, TypeError, AttributeError) as error:
+    except (subprocess.SubprocessError, ValueError, LookupError, OSError, TypeError, AttributeError) as error:
         print('Privacy check could not complete (' + type(error).__name__ + '). Resolve missing Git history or invalid input before upload.', file=sys.stderr)
         sys.exit(2)

@@ -19,11 +19,16 @@ class ContentChecks(unittest.TestCase):
         self.assertEqual(privacy.inspect('prompts/system.txt', b'Answer using synthetic evidence.'), [])
 
     def test_private_markers_in_paths(self):
-        for name in ['PRIVATE' + '_ONLY-client.md', 'docs/BEGIN' + ' PRIVATE.txt', 'notes/gh' + 'p_' + 'Z' * 40 + '.txt']:
+        for name in ['PRIVATE' + '_ONLY-client.md', 'docs/BEGIN' + ' PRIVATE.txt', 'notes/private' + '-only-client.md', 'PRIVATE' + ' ONLY - client.md', 'notes/gh' + 'p_' + 'Z' * 40 + '.txt']:
             self.assertTrue(privacy.inspect(name, b'Neutral body'))
 
+    def test_bom_encoded_private_text(self):
+        for encoding in ['utf-16', 'utf-32']:
+            for text in ['PRIVATE' + '_ONLY', 'image' + '_prompt: recipe']:
+                self.assertTrue(privacy.inspect('note.txt', text.encode(encoding)))
+
     def test_environment_variants(self):
-        for name in ['.env', '.env.local', '.env.production']:
+        for name in ['.env', '.env.local', '.env.production', '.envrc', '.envrc.local']:
             self.assertTrue(privacy.inspect(name, b''))
         self.assertFalse(privacy.inspect('.env.example', b'API_KEY='))
 
@@ -64,7 +69,7 @@ class ContentChecks(unittest.TestCase):
             self.assertTrue(privacy.inspect('data.yaml', ('image' + '_prompt' + delimiter + ' recipe').encode()))
 
     def test_marker_case_and_generation_spellings(self):
-        for marker in ['Note: Private' + '_Only', 'Private' + '_Only', 'private' + '-editorial', 'Begin' + ' Private', 'private' + ' editorial', 'Private' + ' Editorial:', '<!-- Private' + ' Editorial: do not publish -->']:
+        for marker in ['Note: Private' + '_Only', 'Private' + '_Only', 'private' + '-editorial', 'Begin' + ' Private', 'private' + ' editorial', 'Private' + ' Editorial:', 'NOTE: PRIVATE' + ' ONLY: do not publish', 'NOTE: PRIVATE' + ' EDITORIAL: do not publish', '<!-- Private' + ' Editorial: do not publish -->']:
             self.assertTrue(privacy.inspect('data.txt', marker.encode()))
         self.assertFalse(privacy.inspect('README.md', b'Keep private editorial methods elsewhere.'))
         self.assertFalse(privacy.inspect('README.md', b'Builds reject private-only files.'))
@@ -283,6 +288,16 @@ class GitChecks(unittest.TestCase):
         head = self.git('rev-parse', 'HEAD').strip()
         (self.root / '.git/info/grafts').write_text(head + '\n')
         self.assertEqual(self.check('--range', self.base, head).returncode, 2)
+
+    def test_declared_commit_encoding(self):
+        tree = self.git('rev-parse', 'HEAD^{tree}').strip()
+        headers = ('tree ' + tree + '\nparent ' + self.base +
+                   '\nauthor Test <test@example.invalid> 1 +0000\ncommitter Test <test@example.invalid> 1 +0000\nencoding ')
+        for encoding in ['IBM037', 'unsupported-example-encoding']:
+            raw = (headers + encoding + '\n\n').encode() + ('PRIVATE' + '_ONLY').encode('cp037')
+            oid = subprocess.check_output(['git', 'hash-object', '-t', 'commit', '-w', '--stdin'],
+                                          cwd=self.root, env=self.env, input=raw).decode().strip()
+            self.assertNotEqual(self.check('--range', self.base, oid).returncode, 0)
 
     def test_commit_message_ignores_display_encoding(self):
         self.git('commit', '--allow-empty', '-qm', 'PRIVATE' + '_ONLY')
