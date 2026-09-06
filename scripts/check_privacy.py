@@ -16,7 +16,7 @@ def git(*args):
 
 
 PATTERNS = [
-    ('private marker', re.compile(rb'(?m)\bPRIVATE[ ](?:ONLY|EDITORIAL)[ \t]*[:;!]|PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ](?:ONLY|EDITORIAL)(?=[:;.!]|\b[ \t]*$)|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
+    ('private marker', re.compile(rb'(?m)\bPRIVATE[ ](?:ONLY|EDITORIAL)[ \t]*(?=[^A-Za-z\s]|$)|(?-i:PRIVATE[ ](?:ONLY|EDITORIAL))|PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ](?:ONLY|EDITORIAL)(?=[:;.!]|\b[ \t]*$)|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
     ('private key', re.compile(rb'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----')),
     ('AWS access key', re.compile(rb'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b')),
     ('GitHub token', re.compile(rb'\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b')),
@@ -25,23 +25,27 @@ PATTERNS = [
     ('Windows user path', re.compile(rb'(?:[A-Za-z]:[\\/]+|[\\/]{2}[^\\/]+[\\/]+(?:[^\\/]+[\\/]+)?)(?:Users|home)[\\/]+[^\\/\r\n]+', re.I)),
     ('image authoring field', re.compile(rb'(?<![A-Za-z0-9_])(?:style[_-]?prompt|image[_-]?prompt|generation[_-]?prompt|negative[_-]?prompt|base[_-]?style[_-]?prompt)["\x27]?\s*[:=]', re.I)),
 ]
-PRIVATE_PARTS = {'.agents', '.agent', '.obsidian', 'transcripts', 'chat-history', 'private-authoring'}
+PRIVATE_PARTS = {'.direnv', '.agents', '.agent', '.obsidian', 'transcripts', 'chat-history', 'private-authoring'}
 PRIVATE_NAMES = {'writing-style.md', 'website-editorial-private.md', 'credentials.json'}
 PRIVATE_SUFFIXES = {'.pem', '.key', '.p12', '.pfx', '.har', '.log', '.sqlite', '.sqlite3', '.psd', '.xcf'}
+
+
+def normalize_bom(data):
+    for bom, encoding in [(codecs.BOM_UTF32_LE, 'utf-32'), (codecs.BOM_UTF32_BE, 'utf-32'),
+                          (codecs.BOM_UTF16_LE, 'utf-16'), (codecs.BOM_UTF16_BE, 'utf-16')]:
+        if data.startswith(bom):
+            return data.decode(encoding).encode('utf-8')
+    return data
 
 
 def inspect(name, data, mode='100644', notebook_baseline=None):
     """Return categories only, never matching contents."""
     problems = []
-    scan_data = data
-    for bom, encoding in [(codecs.BOM_UTF32_LE, 'utf-32'), (codecs.BOM_UTF32_BE, 'utf-32'),
-                          (codecs.BOM_UTF16_LE, 'utf-16'), (codecs.BOM_UTF16_BE, 'utf-16')]:
-        if data.startswith(bom):
-            try:
-                scan_data = data.decode(encoding).encode('utf-8')
-            except UnicodeError:
-                problems.append('invalid encoded text')
-            break
+    try:
+        scan_data = data + b'\n' + normalize_bom(data)
+    except UnicodeError:
+        scan_data = data
+        problems.append('invalid encoded text')
     p = PurePosixPath(name.lower())
     if mode not in ('100644', '100755'):
         problems.append('symlink, submodule, or unresolved index entry')
@@ -161,7 +165,8 @@ def check_refs(refs):
                     raise ValueError('invalid tag chain')
                 visited_tags.add(current)
                 tag = git('cat-file', 'tag', current)
-                metadata.append((current, tag))
+                annotation = tag.split(b'\n\n', 1)[1]
+                metadata.append((current, tag + b'\n' + normalize_bom(annotation)))
                 current = tag.splitlines()[0].split()[1].decode()
                 if not re.fullmatch(r'[0-9a-f]{40,64}', current):
                     raise ValueError('invalid tag target')

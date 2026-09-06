@@ -44,3 +44,4 @@ transcripts/
 
 .envrc
 .envrc.*
+.direnv/

@@ -27,6 +27,9 @@ class ContentChecks(unittest.TestCase):
             for text in ['PRIVATE' + '_ONLY', 'image' + '_prompt: recipe']:
                 self.assertTrue(privacy.inspect('note.txt', text.encode(encoding)))
 
+    def test_mixed_encoding_keeps_raw_scan(self):
+        self.assertTrue(privacy.inspect('note.txt', 'public'.encode('utf-16') + b'PRIVATE' + b'_ONLY'))
+
     def test_environment_variants(self):
         for name in ['.env', '.env.local', '.env.production', '.envrc', '.envrc.local']:
             self.assertTrue(privacy.inspect(name, b''))
@@ -34,6 +37,7 @@ class ContentChecks(unittest.TestCase):
 
     def test_private_paths(self):
         self.assertTrue(privacy.inspect('.' + 'agents/guide.md', b''))
+        self.assertTrue(privacy.inspect('.direnv/environment', b'Neutral body'))
         self.assertTrue(privacy.inspect('notes/' + 'writing' + '-style.md', b''))
 
     def test_secrets_and_private_markers(self):
@@ -69,7 +73,7 @@ class ContentChecks(unittest.TestCase):
             self.assertTrue(privacy.inspect('data.yaml', ('image' + '_prompt' + delimiter + ' recipe').encode()))
 
     def test_marker_case_and_generation_spellings(self):
-        for marker in ['Note: Private' + '_Only', 'Private' + '_Only', 'private' + '-editorial', 'Begin' + ' Private', 'private' + ' editorial', 'Private' + ' Editorial:', 'NOTE: PRIVATE' + ' ONLY: do not publish', 'NOTE: PRIVATE' + ' EDITORIAL: do not publish', '<!-- Private' + ' Editorial: do not publish -->']:
+        for marker in ['Note: Private' + '_Only', 'Private' + '_Only', 'private' + '-editorial', 'Begin' + ' Private', 'private' + ' editorial', 'Private' + ' Editorial:', 'NOTE: PRIVATE' + ' ONLY: do not publish', 'NOTE: PRIVATE' + ' ONLY. do not publish', 'NOTE: PRIVATE' + ' EDITORIAL. do not publish', 'NOTE: PRIVATE' + ' EDITORIAL: do not publish', '<!-- Private' + ' Editorial: do not publish -->']:
             self.assertTrue(privacy.inspect('data.txt', marker.encode()))
         self.assertFalse(privacy.inspect('README.md', b'Keep private editorial methods elsewhere.'))
         self.assertFalse(privacy.inspect('README.md', b'Builds reject private-only files.'))
@@ -213,6 +217,16 @@ class GitChecks(unittest.TestCase):
                                 text=True, capture_output=True)
         self.assertEqual(result.returncode, 1)
         self.assertIn(self.git('rev-parse', 'release').strip()[:12], result.stderr)
+
+    def test_bom_encoded_tag_annotation(self):
+        for encoding in ['utf-16', 'utf-32']:
+            annotation = Path(self.temp.name) / 'annotation.txt'
+            annotation.write_bytes(('PRIVATE' + '_ONLY').encode(encoding))
+            self.git('tag', '-fa', 'encoded', '-F', str(annotation))
+            oid = self.git('rev-parse', 'encoded').strip()
+            self.assertNotEqual(self.check('--range', self.base, oid).returncode, 0)
+            line = 'refs/tags/encoded ' + oid + ' refs/tags/encoded ' + '0' * 40 + '\n'
+            self.assertNotEqual(self.check('--pre-push', 'origin', input_text=line).returncode, 0)
 
     def test_updated_annotated_tag(self):
         self.git('tag', '-a', 'v1', '-m', 'Public version')
