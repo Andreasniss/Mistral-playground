@@ -67,7 +67,7 @@ class ContentChecks(unittest.TestCase):
             self.assertTrue(privacy.inspect('data.json', json.dumps(spaced).encode()))
 
     def test_home_directory_without_child(self):
-        for path in ['/ho' + 'me/alice', '/Us' + 'ers/alice', 'C:' + chr(92) + 'Users' + chr(92) + 'alice']:
+        for path in ['/ho' + 'me/alice', '/ho' + 'me/andré/file', '/ho' + 'me/李/file', '/Us' + 'ers/Élodie/file', '/Us' + 'ers/Jane Doe/file', '/Us' + 'ers/alice', 'C:' + chr(92) + 'Users' + chr(92) + 'alice']:
             self.assertTrue(privacy.inspect('data.txt', path.encode()))
 
     def test_unquoted_authoring_fields(self):
