@@ -20,6 +20,9 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            HEAD_SHA=$(git rev-parse --verify "$GITHUB_REF")
+          fi
           if [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
             BASE_SHA=$(git merge-base refs/remotes/origin/main "$HEAD_SHA")
           fi

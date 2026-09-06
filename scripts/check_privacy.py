@@ -15,13 +15,13 @@ def git(*args):
 
 
 PATTERNS = [
-    ('private marker', re.compile(rb'(?m)PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ]ONLY|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
+    ('private marker', re.compile(rb'(?m)PRIVATE_(?:ONLY|EDITORIAL)|PRIVATE[-]EDITORIAL|BEGIN[ ]PRIVATE|(?-i:PRIVATE[-]ONLY)|(?:^[ \t]*(?:(?:#+|//|<!--)[ \t]*)?|["\x27])(?:PRIVATE[-_](?:ONLY|EDITORIAL)|PRIVATE[ ](?:ONLY|EDITORIAL)(?=[:;.!]|\b[ \t]*$)|BEGIN[ ]PRIVATE)\b|^[ \t]*(?:#+[ \t]*)?PRIVATE[ ]EDITORIAL[ \t]*$', re.I)),
     ('private key', re.compile(rb'-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----')),
     ('AWS access key', re.compile(rb'\b(?:AKIA|ASIA)[A-Z0-9]{16}\b')),
     ('GitHub token', re.compile(rb'\bgh[pousr]_[A-Za-z0-9]{30,}\b|\bgithub_pat_[A-Za-z0-9_]{40,}\b')),
     ('provider token', re.compile(rb'\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{30,}\b')),
     ('local user path', re.compile(rb'/(?:Users|home)/[A-Za-z0-9_.-]+/')),
-    ('Windows user path', re.compile(rb'(?:[A-Za-z]:[\\/]+|[\\/]{2}[^\\/]+[\\/]+(?:[^\\/]+[\\/]+)?)(?:Users|home)[\\/]+[^\\/\s]+[\\/]', re.I)),
+    ('Windows user path', re.compile(rb'(?:[A-Za-z]:[\\/]+|[\\/]{2}[^\\/]+[\\/]+(?:[^\\/]+[\\/]+)?)(?:Users|home)[\\/]+[^\\/\r\n]+[\\/]', re.I)),
     ('image authoring field', re.compile(rb'(?<![A-Za-z0-9_])(?:style[_-]?prompt|image[_-]?prompt|generation[_-]?prompt|negative[_-]?prompt|base[_-]?style[_-]?prompt)["\x27]?\s*[:=]', re.I)),
 ]
 PRIVATE_PARTS = {'.agents', '.agent', '.obsidian', 'transcripts', 'chat-history', 'private-authoring'}
@@ -41,6 +41,9 @@ def inspect(name, data, mode='100644', notebook_baseline=None):
         problems.append('environment file')
     if p.suffix in PRIVATE_SUFFIXES:
         problems.append('private or raw artifact type')
+    for label, pattern in PATTERNS:
+        if pattern.search(name.encode('utf-8', 'surrogateescape')):
+            problems.append(label + ' in path')
     approved_upstream = (notebook_baseline or {}).get(name) == hashlib.sha256(data).hexdigest()
     for label, pattern in PATTERNS:
         if label == 'image authoring field' and approved_upstream:

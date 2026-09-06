@@ -18,6 +18,10 @@ class ContentChecks(unittest.TestCase):
     def test_public_prompt(self):
         self.assertEqual(privacy.inspect('prompts/system.txt', b'Answer using synthetic evidence.'), [])
 
+    def test_private_markers_in_paths(self):
+        for name in ['PRIVATE' + '_ONLY-client.md', 'docs/BEGIN' + ' PRIVATE.txt', 'notes/gh' + 'p_' + 'Z' * 40 + '.txt']:
+            self.assertTrue(privacy.inspect(name, b'Neutral body'))
+
     def test_environment_variants(self):
         for name in ['.env', '.env.local', '.env.production']:
             self.assertTrue(privacy.inspect(name, b''))
@@ -47,13 +51,16 @@ class ContentChecks(unittest.TestCase):
                      chr(92) * 2 + 'server' + chr(92) + 'Users' + chr(92) + 'demo' + chr(92) + 'note.txt']:
             self.assertTrue(privacy.inspect('data.txt', path.encode()))
             self.assertTrue(privacy.inspect('data.json', json.dumps(path).encode()))
+            spaced = path.replace('demo', 'Jane Doe')
+            self.assertTrue(privacy.inspect('data.txt', spaced.encode()))
+            self.assertTrue(privacy.inspect('data.json', json.dumps(spaced).encode()))
 
     def test_unquoted_authoring_fields(self):
         for delimiter in [':', '=']:
             self.assertTrue(privacy.inspect('data.yaml', ('image' + '_prompt' + delimiter + ' recipe').encode()))
 
     def test_marker_case_and_generation_spellings(self):
-        for marker in ['Note: Private' + '_Only', 'Private' + '_Only', 'private' + '-editorial', 'Begin' + ' Private', 'private' + ' editorial']:
+        for marker in ['Note: Private' + '_Only', 'Private' + '_Only', 'private' + '-editorial', 'Begin' + ' Private', 'private' + ' editorial', 'Private' + ' Editorial:', '<!-- Private' + ' Editorial: do not publish -->']:
             self.assertTrue(privacy.inspect('data.txt', marker.encode()))
         self.assertFalse(privacy.inspect('README.md', b'Keep private editorial methods elsewhere.'))
         self.assertFalse(privacy.inspect('README.md', b'Builds reject private-only files.'))
@@ -183,6 +190,20 @@ class GitChecks(unittest.TestCase):
         head = self.git('rev-parse', 'HEAD').strip()
         line = 'refs/heads/topic ' + head + ' refs/heads/topic ' + '0' * 40 + '\n'
         self.assertEqual(self.check('--pre-push', 'origin', input_text=line).returncode, 1)
+
+    def test_ci_resolves_annotated_tag_ref(self):
+        self.git('tag', '-a', 'release', '-m', 'PRIVATE' + '_ONLY')
+        (self.root / 'scripts').mkdir()
+        (self.root / 'scripts/check_privacy.py').write_bytes(SCRIPT.read_bytes())
+        workflow = SCRIPT.parent.parent.joinpath('.github/workflows/privacy.yml').read_text()
+        command = workflow.split('        run: |\n')[-1]
+        command = '\n'.join(line[10:] for line in command.splitlines())
+        env = dict(self.env, GITHUB_REF_TYPE='tag', GITHUB_REF='refs/tags/release',
+                   BASE_SHA=self.base, HEAD_SHA=self.base)
+        result = subprocess.run(['bash', '-e', '-c', command], cwd=self.root, env=env,
+                                text=True, capture_output=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(self.git('rev-parse', 'release').strip()[:12], result.stderr)
 
     def test_updated_annotated_tag(self):
         self.git('tag', '-a', 'v1', '-m', 'Public version')
