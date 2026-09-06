@@ -30,3 +30,14 @@ env/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Local authoring and execution artifacts
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+*.log
+*.har
+private-authoring/
+transcripts/
