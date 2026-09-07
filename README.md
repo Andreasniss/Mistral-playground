@@ -1,7 +1,5 @@
 # Agent Reliability Lab
 
-[Built by Andreas Nissen](https://github.com/Andreasniss) · [andreasnissen.dev](https://andreasnissen.dev) · [Connect on LinkedIn](https://www.linkedin.com/in/andreasnissen) · [Source on GitHub](https://github.com/Andreasniss/Mistral-playground) · [Apache-2.0](LICENSE)
-
 [![CI](https://github.com/Andreasniss/Mistral-playground/actions/workflows/ci.yml/badge.svg)](https://github.com/Andreasniss/Mistral-playground/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB.svg)](https://www.python.org/)
 
@@ -12,6 +10,11 @@ credential-free tests, and a deterministic evaluation contract.
 
 > Portfolio scope: an applied-AI engineering reference, not a production service
 > or a claim of model-quality benchmarking.
+
+Start with the [credential-free preview](#try-it-in-60-seconds), or read the
+[project walkthrough](https://andreasnissen.dev/projects/mistral-playground/) for the
+reviewer path and trust boundaries. The repository slug `Mistral-playground` is
+retained; the project is named **Agent Reliability Lab**.
 
 **Verified 31 August 2026:** Ruff passes, 26 credential-free tests pass, all 6 deterministic evaluation cases pass, and the locked runtime dependency audit reports no known vulnerabilities.
 
@@ -27,27 +30,35 @@ credential-free tests, and a deterministic evaluation contract.
 | Regression safety | Secret-free CI, deterministic evals, locked dependency audit | `.github/workflows/ci.yml`, `evals/`, `uv.lock` |
 | Provider choice | Mistral cloud or local Ollama through one client boundary | `config.py`, `llm_client.py` |
 
-Related writing: [The Hard Part of Agentic AI Starts After the Demo](https://andreasnissen.dev/writing/agentic-ai-after-the-demo/) explains the production architecture around this reference. [How I Review AI-Built Public Work Without Outsourcing Judgment](https://andreasnissen.dev/writing/reviewing-ai-built-public-work/) explains the evidence and ownership standard applied to it.
-
 ## Try it in 60 seconds
 
-The public UI automatically enters a clearly labelled, credential-free preview when
-no provider is configured. It demonstrates routing and grounded policy answers
-without faking a model call or live weather.
+Prerequisites: Git, Python 3.12 or later, and
+[uv](https://docs.astral.sh/uv/getting-started/installation/).
+The lockfile selects the reviewed dependencies. Setup time depends
+on downloads; the walkthrough below takes about a minute once installed.
 
 ```bash
 git clone https://github.com/Andreasniss/Mistral-playground.git
 cd Mistral-playground
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-streamlit run demo_streamlit.py
+uv sync --locked --dev
+uv run streamlit run demo_streamlit.py
 ```
 
-Open `http://localhost:8501`, then choose one of the reviewer prompts.
+With no provider key configured, open `http://localhost:8501` and confirm the
+**Credential-free preview** label. This mode makes no model or live-weather call.
 
-For a locked, reproducible environment, use `uv sync --locked --dev` and
-`uv run streamlit run demo_streamlit.py` instead.
+1. Select **How many vacation days do employees receive?** Expect a summary citing
+   the fictional policy, with the route, tool name, and **No provider call** visible.
+2. Select **What is the weather in Munich?** Expect an explanation that live weather
+   is disabled in preview.
+3. Select **Clear conversation** in the sidebar to reset the conversation.
+
+No local runtime? Inspect the [UI interaction tests](tests/test_streamlit_app.py)
+and [versioned evaluation cases](evals/cases.json) for the same review path.
+
+A pip-compatible setup remains available through `requirements.txt`; use a Python
+3.12 virtual environment and install it there. The commands below use the locked
+uv environment consistently.
 
 ## Connected mode
 
@@ -56,14 +67,14 @@ For a locked, reproducible environment, use `uv sync --locked --dev` and
 ```bash
 cp .env.example .env
 # Add MISTRAL_API_KEY to .env
-streamlit run demo_streamlit.py
+uv run streamlit run demo_streamlit.py
 ```
 
 ### Local model with Ollama
 
 ```bash
 ollama pull mistral
-LLM_BACKEND=local MISTRAL_MODEL=mistral streamlit run demo_streamlit.py
+LLM_BACKEND=local MISTRAL_MODEL=mistral uv run streamlit run demo_streamlit.py
 ```
 
 Connected mode sends every request to the model with both tools available. The model
@@ -99,10 +110,11 @@ See [SECURITY.md](SECURITY.md) for production gaps and security assumptions.
 Run the offline regression suite:
 
 ```bash
-python -m pytest -q
-python -m evals.run_evals
+uv run ruff check .
+uv run pytest -q
+uv run python -m evals.run_evals
 uv export --locked --no-dev --no-hashes --output-file /tmp/audit-requirements.txt
-pip-audit --requirement /tmp/audit-requirements.txt --strict
+uv run pip-audit --requirement /tmp/audit-requirements.txt --strict
 ```
 
 The versioned cases check deterministic boundaries around the model:
@@ -118,10 +130,10 @@ provider runs, calibrated human labels, a failure taxonomy, and latency/cost thr
 ## Other runnable surfaces
 
 ```bash
-uvicorn api:app --host 127.0.0.1 --port 8000  # FastAPI + /docs
-python demo_chat.py                           # Multi-turn CLI
-python demo_tools.py --interactive             # Tool-call loop
-python demo_structured.py                      # Typed JSON output
+uv run uvicorn api:app --host 127.0.0.1 --port 8000  # FastAPI + /docs
+uv run python demo_chat.py                           # Multi-turn CLI
+uv run python demo_tools.py --interactive             # Tool-call loop
+uv run python demo_structured.py                      # Typed JSON output
 ```
 
 The FastAPI endpoints are intentionally local-only. `/chat` and `/summarize` require
@@ -145,16 +157,16 @@ for exploration but can change behavior over time.
 
 ## Project map
 
-```text
-demo_streamlit.py   reviewer-facing UI and tool gate
-llm_client.py       provider boundary, retry loop, tool loop, tracing
-showcase.py         honest credential-free preview and retrieval
-api.py              typed localhost-only HTTP surface
-evals/              versioned deterministic evaluation contract
-tests/              credential-free unit and privacy regression tests
-RAG/hr_policy.md    synthetic grounding document
-prompts/            version-controlled prompt templates
-```
+| Path | Purpose |
+|---|---|
+| [demo_streamlit.py](demo_streamlit.py) | Reviewer UI and tool gate |
+| [llm_client.py](llm_client.py) | Provider boundary, retries, tool loop, tracing |
+| [showcase.py](showcase.py) | Credential-free preview and retrieval |
+| [api.py](api.py) | Typed localhost HTTP surface |
+| [evals/](evals/) | Deterministic evaluation contract |
+| [tests/](tests/) | Unit, privacy, and UI interaction tests |
+| [RAG/hr_policy.md](RAG/hr_policy.md) | Synthetic grounding document |
+| [prompts/](prompts/) | Version-controlled prompt templates |
 
 ## Deliberate limits
 
@@ -170,10 +182,20 @@ Andreas Nissen owns the project intent, architecture, requirements, evaluation c
 
 This is a personal project. Views and opinions are Andreas's own and do not represent his employer.
 
-## Contributing safely
+## Related writing
 
-Read [the publication privacy boundary](PRIVACY.md) and install the local Git hooks before uploading changes. Private authoring stays outside public branches and PRs; intentional demo prompts and reviewed engineering evidence remain public.
+- [The Hard Part of Agentic AI Starts After the Demo](https://andreasnissen.dev/writing/agentic-ai-after-the-demo/): the production architecture beyond this reference.
+- [How I Review AI-Built Public Work Without Outsourcing Judgment](https://andreasnissen.dev/writing/reviewing-ai-built-public-work/): the evidence and ownership standard applied here.
 
-## Reuse and contributions
+## Contributing and reuse
 
-Copyright 2026 Andreas Nissen. Original project code and accompanying technical documentation are licensed under [Apache-2.0](LICENSE), except where separately indicated. See [NOTICE](NOTICE). Third-party dependencies and bundled material retain their own terms. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, verification, and contribution expectations.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup and verification, and
+[PRIVACY.md](PRIVACY.md) before uploading changes. Install the local Git hooks as
+documented there. Keep private authoring outside public branches and PRs.
+
+Copyright 2026 Andreas Nissen. Original project code and accompanying technical
+documentation are licensed under [Apache-2.0](LICENSE), except where separately
+indicated. See [NOTICE](NOTICE). Third-party dependencies and bundled material
+retain their own terms.
+
+[Built by Andreas Nissen](https://github.com/Andreasniss) · [AndreasNissen.dev](https://andreasnissen.dev) · [Connect on LinkedIn](https://www.linkedin.com/in/andreasnissen) · [Source on GitHub](https://github.com/Andreasniss/Mistral-playground) · [Apache-2.0](LICENSE)

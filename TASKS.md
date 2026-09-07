@@ -7,6 +7,7 @@ In-flight and backlog items for this repo.
 ## In Progress
 
 
+
 <!-- Add items here when you start working on them -->
 
 ---
@@ -34,6 +35,8 @@ In-flight and backlog items for this repo.
 ---
 
 ## Done
+
+- [x] Aligned the README reviewer path, setup commands, related writing, and contribution links; verified relative links, privacy checks, Ruff, 64 tests, and six deterministic evaluation cases.
 
 - [x] Aligned Apache-2.0 notices, README attribution, and contribution guidance; lint, 64 tests, and six deterministic evaluations passed.
 
