@@ -1,5 +1,7 @@
 # Agent Reliability Lab
 
+[Built by Andreas Nissen](https://github.com/Andreasniss) · [AndreasNissen.dev](https://andreasnissen.dev) · [Connect on LinkedIn](https://www.linkedin.com/in/andreasnissen) · [Source on GitHub](https://github.com/Andreasniss/Mistral-playground) · [Apache-2.0](LICENSE)
+
 [![CI](https://github.com/Andreasniss/Mistral-playground/actions/workflows/ci.yml/badge.svg)](https://github.com/Andreasniss/Mistral-playground/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB.svg)](https://www.python.org/)
 
@@ -11,7 +13,7 @@ credential-free tests, and a deterministic evaluation contract.
 > Portfolio scope: an applied-AI engineering reference, not a production service
 > or a claim of model-quality benchmarking.
 
-Start with the [credential-free preview](#try-it-in-60-seconds), or read the
+Start with the [credential-free preview](#try-the-credential-free-preview), or read the
 [project walkthrough](https://andreasnissen.dev/projects/mistral-playground/) for the
 reviewer path and trust boundaries. The repository slug `Mistral-playground` is
 retained; the project is named **Agent Reliability Lab**.
@@ -30,12 +32,11 @@ retained; the project is named **Agent Reliability Lab**.
 | Regression safety | Secret-free CI, deterministic evals, locked dependency audit | `.github/workflows/ci.yml`, `evals/`, `uv.lock` |
 | Provider choice | Mistral cloud or local Ollama through one client boundary | `config.py`, `llm_client.py` |
 
-## Try it in 60 seconds
+## Try the credential-free preview
 
 Prerequisites: Git, Python 3.12 or later, and
 [uv](https://docs.astral.sh/uv/getting-started/installation/).
-The lockfile selects the reviewed dependencies. Setup time depends
-on downloads; the walkthrough below takes about a minute once installed.
+The lockfile selects the reviewed dependencies. Initial setup time depends on downloads.
 
 ```bash
 git clone https://github.com/Andreasniss/Mistral-playground.git
@@ -197,5 +198,3 @@ Copyright 2026 Andreas Nissen. Original project code and accompanying technical
 documentation are licensed under [Apache-2.0](LICENSE), except where separately
 indicated. See [NOTICE](NOTICE). Third-party dependencies and bundled material
 retain their own terms.
-
-[Built by Andreas Nissen](https://github.com/Andreasniss) · [AndreasNissen.dev](https://andreasnissen.dev) · [Connect on LinkedIn](https://www.linkedin.com/in/andreasnissen) · [Source on GitHub](https://github.com/Andreasniss/Mistral-playground) · [Apache-2.0](LICENSE)
